@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+
+# Environment variables (NUNCA subir a git)
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# Bases de datos SQLite (datos locales + write-ahead logs)
+*.db
+*.db-shm
+*.db-wal
+backend/db/*.db*
+pipeline.db
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Backups
+*.bak
+*.tmp

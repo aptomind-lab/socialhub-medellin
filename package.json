@@ -1,0 +1,19 @@
+{
+  "name": "socialhub-medellin",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Monorepo: backend (Node/Express/SQLite) + 3 frontends estáticos (landing, dashboard, scanner)",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "node scripts/inject-api-url.js",
+    "vercel-build": "node scripts/inject-api-url.js",
+    "dev:backend": "cd backend && npm run dev",
+    "start:backend": "cd backend && npm start",
+    "init-db": "cd backend && npm run init-db"
+  },
+  "workspaces": [
+    "backend"
+  ]
+}

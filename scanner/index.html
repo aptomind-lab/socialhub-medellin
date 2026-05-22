@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1" />
+  <meta name="theme-color" content="#0B1B2B" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>SHM Scanner</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500&family=Jost:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <!-- Login -->
+  <section id="login-screen" class="screen active">
+    <div class="brand-row">
+      <span class="mark">◆</span>
+      <span class="name">SHM <em>Scanner</em></span>
+    </div>
+    <div class="login-card">
+      <div class="overline">Acceso de Coordinador</div>
+      <h1>Iniciar sesión</h1>
+      <form id="login-form">
+        <label>Código de distribuidor</label>
+        <input type="text" id="login-code" required autocapitalize="characters" spellcheck="false" autocomplete="username" placeholder="Ej. M3LD01" style="text-transform:uppercase;letter-spacing:3px;" />
+        <label>Contraseña</label>
+        <input type="password" id="login-password" required autocomplete="current-password" />
+        <button class="primary" type="submit">Ingresar</button>
+        <div id="login-error" class="error" hidden></div>
+      </form>
+    </div>
+  </section>
+
+  <!-- App -->
+  <section id="app-screen" class="screen">
+    <header class="appbar">
+      <div class="brand-row sm">
+        <span class="mark">◆</span>
+        <span class="name">SHM <em>Scanner</em></span>
+      </div>
+      <button id="logout-btn" class="ghost-btn">Salir</button>
+    </header>
+
+    <div class="event-card">
+      <div class="overline">Evento actual</div>
+      <select id="event-select"></select>
+      <div class="event-meta">
+        <span id="event-stage" class="chip"></span>
+        <span id="event-date" class="muted"></span>
+      </div>
+    </div>
+
+    <div class="counter-card">
+      <div class="counter-label">Escaneos de hoy</div>
+      <div class="counter-value" id="today-count">0</div>
+    </div>
+
+    <div class="scan-area">
+      <video id="video" playsinline muted></video>
+      <div class="scan-frame"></div>
+      <div class="scan-hint" id="scan-hint">Centra el QR del invitado</div>
+    </div>
+
+    <div class="controls">
+      <button id="start-btn" class="primary">Activar cámara</button>
+      <button id="stop-btn" class="ghost-btn" hidden>Pausar</button>
+      <button id="manual-btn" class="ghost-btn">Ingresar código manual</button>
+    </div>
+
+    <div id="manual-pane" class="manual" hidden>
+      <input id="manual-input" type="text" placeholder="Pega el token o URL del QR" />
+      <button id="manual-submit" class="primary">Procesar</button>
+    </div>
+  </section>
+
+  <!-- Modal de confirmación -->
+  <div id="confirm-modal" class="modal" hidden>
+    <div class="modal-card">
+      <div class="modal-mark" id="modal-mark">✓</div>
+      <h2 id="modal-title">Acceso confirmado</h2>
+      <div class="modal-row"><span class="lbl">Invitado</span><span id="m-name"></span></div>
+      <div class="modal-row"><span class="lbl">Socio</span><span id="m-partner"></span></div>
+      <div class="modal-row"><span class="lbl">Módulo</span><span id="m-module"></span></div>
+      <div class="modal-row"><span class="lbl">Etapa anterior</span><span id="m-prev"></span></div>
+      <div class="modal-row"><span class="lbl">Etapa actual</span><span id="m-new" class="gold"></span></div>
+      <div id="m-wg-block" hidden>
+        <div class="wg-divider">Working Group</div>
+        <div class="modal-row"><span class="lbl">Día</span><span id="m-wg-day" class="gold"></span></div>
+        <div class="modal-row"><span class="lbl">Semana</span><span id="m-wg-week"></span></div>
+        <div class="modal-row"><span class="lbl">Total semanas</span><span id="m-wg-weeks"></span></div>
+        <div class="modal-row"><span class="lbl">Consecutivas</span><span id="m-wg-consec"></span></div>
+        <div class="wg-status-card" id="m-wg-status-card">
+          <div id="m-wg-status-icon">🟢</div>
+          <div id="m-wg-status-text">Sólido</div>
+        </div>
+      </div>
+      <button id="modal-close" class="primary">Continuar</button>
+    </div>
+  </div>
+
+  <script src="assets/zxing.min.js"></script>
+  <script src="config.js"></script>
+  <script src="assets/app.js"></script>
+</body>
+</html>

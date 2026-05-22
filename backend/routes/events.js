@@ -1,0 +1,157 @@
+const express = require('express');
+const db = require('../db');
+const { requireAuth, requireRole } = require('../middleware/auth');
+const { STAGES, SCANNABLE_STAGES, nextStageAfterScan, STAGE_LABELS } = require('../utils/stages');
+const { eventHappensToday, dayOfWeekLabel, DAYS_ES, getISOWeek, dayOfWeekKey } = require('../utils/calendar');
+const wg = require('../utils/wg');
+const colors = require('../utils/colors');
+
+const router = express.Router();
+
+router.get('/', requireAuth, (req, res) => {
+  const activeOnly = req.query.active_only === 'true';
+  const todayOnly = req.query.today === 'true';
+  const sql = activeOnly
+    ? 'SELECT * FROM events WHERE active = 1 ORDER BY date DESC, id DESC'
+    : 'SELECT * FROM events ORDER BY active DESC, date DESC, id DESC';
+  let events = db.prepare(sql).all();
+  if (todayOnly) events = events.filter((ev) => eventHappensToday(ev));
+
+  // Decorar con label legible de día
+  events = events.map((ev) => ({
+    ...ev,
+    recurrence_days_label: ev.recurrence_days
+      ? ev.recurrence_days.split(',').map((d) => DAYS_ES[d.trim()] || d.trim()).join(', ')
+      : null,
+  }));
+
+  res.json({
+    events,
+    stages: STAGES,
+    scannable_stages: SCANNABLE_STAGES,
+    stage_labels: STAGE_LABELS,
+    today_label: dayOfWeekLabel(),
+  });
+});
+
+router.post('/', requireAuth, requireRole('system_leader', 'module_leader'), (req, res) => {
+  const { name, stage_target, date, recurrence_type, recurrence_days } = req.body || {};
+  if (!name || !stage_target || !date) return res.status(400).json({ error: 'Faltan campos' });
+  if (!SCANNABLE_STAGES.includes(stage_target)) return res.status(400).json({ error: 'Etapa inválida' });
+  const info = db.prepare(`
+    INSERT INTO events (name, stage_target, date, recurrence_type, recurrence_days)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(name, stage_target, date, recurrence_type || 'one_time', recurrence_days || null);
+  res.status(201).json({ event: db.prepare('SELECT * FROM events WHERE id = ?').get(info.lastInsertRowid) });
+});
+
+router.patch('/:id', requireAuth, requireRole('system_leader', 'module_leader'), (req, res) => {
+  const { name, stage_target, date, active, recurrence_type, recurrence_days } = req.body || {};
+  const fields = [], values = [];
+  if (name !== undefined)            { fields.push('name = ?');            values.push(name); }
+  if (stage_target !== undefined) {
+    if (!SCANNABLE_STAGES.includes(stage_target)) return res.status(400).json({ error: 'Etapa inválida' });
+    fields.push('stage_target = ?'); values.push(stage_target);
+  }
+  if (date !== undefined)            { fields.push('date = ?');            values.push(date); }
+  if (active !== undefined)          { fields.push('active = ?');          values.push(active ? 1 : 0); }
+  if (recurrence_type !== undefined) { fields.push('recurrence_type = ?'); values.push(recurrence_type); }
+  if (recurrence_days !== undefined) { fields.push('recurrence_days = ?'); values.push(recurrence_days || null); }
+  if (!fields.length) return res.status(400).json({ error: 'Sin campos' });
+  values.push(req.params.id);
+  db.prepare(`UPDATE events SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+  res.json({ event: db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id) });
+});
+
+router.delete('/:id', requireAuth, requireRole('system_leader'), (req, res) => {
+  db.prepare('DELETE FROM events WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
+});
+
+router.post('/scan', requireAuth, (req, res) => {
+  const { event_id, qr_token } = req.body || {};
+  if (!event_id || !qr_token) return res.status(400).json({ error: 'event_id y qr_token requeridos' });
+
+  const event = db.prepare('SELECT * FROM events WHERE id = ?').get(event_id);
+  if (!event) return res.status(404).json({ error: 'Evento no encontrado' });
+
+  const cleanedToken = String(qr_token).trim().split('/').pop();
+  const guest = db.prepare(`
+    SELECT g.*, u.full_name AS distributor_name, m.number AS module_number
+    FROM guests g
+    JOIN users u ON u.id = g.distributor_id
+    LEFT JOIN modules m ON m.id = u.module_id
+    WHERE g.qr_token = ?
+  `).get(cleanedToken);
+  if (!guest) return res.status(404).json({ error: 'QR inválido o no encontrado' });
+
+  const isWG = event.stage_target === 'WORKING_GROUP';
+  // Plan de Trabajo (martes) registra Plan Trabajo Y el primer WG del martes con un solo scan.
+  const isPlanTrabajo = event.stage_target === 'PLAN_TRABAJO';
+  const newStage = nextStageAfterScan(guest.current_stage, event.stage_target);
+  const advanced = newStage !== guest.current_stage;
+
+  if (advanced) {
+    db.prepare("UPDATE guests SET current_stage = ?, updated_at = datetime('now') WHERE id = ?")
+      .run(newStage, guest.id);
+    // Sellar fechas clave al alcanzar cada hito por primera vez
+    const today = new Date().toISOString().slice(0, 10);
+    if (newStage === 'BIT' && !guest.bit_date) {
+      db.prepare(`UPDATE guests SET bit_date = ? WHERE id = ?`).run(today, guest.id);
+    }
+    if (newStage === 'POWER_TALK' && !guest.power_talk_date) {
+      db.prepare(`UPDATE guests SET power_talk_date = ? WHERE id = ?`).run(today, guest.id);
+    }
+  }
+  db.prepare(`
+    INSERT INTO stage_history (guest_id, from_stage, to_stage, scanned_by, notes)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(guest.id, guest.current_stage, advanced ? newStage : guest.current_stage,
+         req.user.id, `${advanced ? 'Avance' : 'Re-scan'} en evento: ${event.name}`);
+
+  // Asistencia WG: se registra si el evento es WG O si es Plan Trabajo (1-scan martes).
+  let wgInfo = null;
+  if (isWG || isPlanTrabajo) {
+    const today = new Date();
+    const att = wg.recordAttendance({ guestId: guest.id, scannedBy: req.user.id, refDate: today });
+    const status = wg.calculateStatus(guest.id);
+    wgInfo = {
+      attended_date: att.attended_date,
+      day_of_week: att.day_of_week,
+      day_label: DAYS_ES[att.day_of_week],
+      iso_week: att.iso_week,
+      already_attended_today: !att.inserted,
+      auto_from_plan_trabajo: isPlanTrabajo && !isWG,
+      status,
+    };
+  }
+
+  // Recalcular color tras cualquier scan (avance o re-scan a WG)
+  let colorInfo = null;
+  try {
+    const res = colors.refreshColor(guest.id);
+    if (res && res.changed) colorInfo = res;
+  } catch (e) { console.error('[scan/color]', e.message); }
+
+  const updated = db.prepare('SELECT * FROM guests WHERE id = ?').get(guest.id);
+  res.json({
+    ok: true, advanced,
+    guest: updated,
+    previous_stage: guest.current_stage,
+    new_stage: updated.current_stage,
+    event,
+    wg: wgInfo,
+    color_changed: colorInfo,
+  });
+});
+
+router.get('/scan/today-count', requireAuth, (req, res) => {
+  const today = new Date().toISOString().slice(0, 10);
+  const row = db.prepare(`
+    SELECT COUNT(*) AS c FROM stage_history
+    WHERE scanned_by = ? AND date(scanned_at) = ?
+  `).get(req.user.id, today);
+  res.json({ count: row.c });
+});
+
+module.exports = router;

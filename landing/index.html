@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0B1B2B" />
+  <title>SHM</title>
+  <meta name="description" content="Social Media Marketing — The World in Your Hands." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500;600&family=Jost:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <div class="bg-grid"></div>
+  <div class="bg-glow"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">◆</span>
+      <span class="brand-text">SHM</span>
+    </div>
+    <div class="locale">EST. MMXXV · MEDELLÍN, COLOMBIA</div>
+  </header>
+
+  <main class="stage">
+    <section class="hero">
+      <h1 class="display"><em>Social Media</em> Marketing</h1>
+      <p class="subhead">The World in Your Hands</p>
+      <div class="trust">
+        <span>Acceso exclusivo</span><i></i>
+        <span>QR personal</span><i></i>
+        <span>Membresía verificada</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-edge"></div>
+      <div class="card-body">
+        <div class="step">PASO ÚNICO · 60 SEGUNDOS</div>
+        <h2>Confirma tu acceso</h2>
+
+        <form id="register-form" novalidate>
+          <div class="field">
+            <label for="full_name">Nombre completo</label>
+            <input id="full_name" name="full_name" type="text" required autocomplete="name" placeholder="Ej. María Camila Ríos" />
+          </div>
+
+          <div class="field">
+            <label for="email">Correo electrónico</label>
+            <input id="email" name="email" type="email" required autocomplete="email" placeholder="tu@correo.com" />
+          </div>
+
+          <div class="field">
+            <label for="phone">Teléfono / WhatsApp</label>
+            <input id="phone" name="phone" type="tel" required autocomplete="tel" placeholder="+57 300 000 0000" />
+          </div>
+
+          <div class="field">
+            <label for="access_code">Código de acceso</label>
+            <input id="access_code" name="access_code" type="text" required maxlength="10"
+                   autocomplete="off" autocapitalize="characters" spellcheck="false"
+                   placeholder="Ingresa tu código" class="upper" />
+            <div class="hint">El código que recibiste de tu invitador.</div>
+          </div>
+
+          <button type="submit" class="cta" id="submit-btn">
+            <span class="cta-text">Recibir mi QR de acceso</span>
+            <span class="cta-arrow">→</span>
+          </button>
+
+          <p class="legal">
+            Al continuar, aceptas el manejo de tus datos para la coordinación del evento.
+            Tu información se mantiene confidencial.
+          </p>
+        </form>
+
+        <div id="error" class="error" hidden></div>
+      </div>
+    </section>
+  </main>
+
+  <section id="success" class="success" hidden>
+    <div class="success-card">
+      <div class="success-mark">✦</div>
+      <div class="overline gold">Acceso confirmado</div>
+      <h2 class="display sm">Bienvenido a <em>SHM</em>.</h2>
+      <p class="lede sm">Hemos enviado tu QR a tu correo. También puedes guardarlo desde aquí.</p>
+      <div class="qr-frame">
+        <img id="qr-img" alt="Código QR personal" />
+      </div>
+      <a id="qr-download" class="ghost" download="socialhub-qr.png">Descargar mi QR</a>
+      <p class="legal">Presenta este código en la entrada de cada evento.</p>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <div class="foot-row">
+      <span>Premium</span><i></i><span>Excelencia</span><i></i><span>Compromiso</span>
+    </div>
+    <div class="copy">© <span id="year"></span> SHM. Todos los derechos reservados.</div>
+  </footer>
+
+  <script src="assets/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0B1B2B" />
+  <title>SHM — Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Jost:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+
+  <!-- LOGIN -->
+  <section id="login-screen" class="screen active">
+    <div class="login-wrap">
+      <div class="brand-row">
+        <span class="mark">◆</span>
+        <span class="name">SHM</span>
+      </div>
+      <div class="login-card">
+        <div class="overline">Acceso al Sistema</div>
+        <h1>Iniciar sesión</h1>
+        <form id="login-form">
+          <label>Código de distribuidor</label>
+          <input type="text" id="login-code" required autocapitalize="characters" spellcheck="false" class="upper" placeholder="Ej. 1340" />
+          <label>Contraseña</label>
+          <input type="password" id="login-password" required />
+          <button class="primary" type="submit">Ingresar</button>
+          <div id="login-error" class="error" hidden></div>
+        </form>
+        <a href="#" id="forgot-link" style="display:inline-block;margin-top:18px;font-size:12px;color:var(--gold-400);text-decoration:none;letter-spacing:1px;">¿Olvidaste tu contraseña?</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- FORGOT PASSWORD -->
+  <section id="forgot-screen" class="screen">
+    <div class="login-wrap">
+      <div class="brand-row"><span class="mark">◆</span><span class="name">SHM</span></div>
+      <div class="login-card">
+        <div class="overline">Recuperación</div>
+        <h1>Recupera tu contraseña</h1>
+        <p class="legal" style="margin: 0 0 18px;">Ingresa tu ID de distribuidor. Te enviaremos al correo registrado un enlace válido por 24 horas para crear una nueva contraseña.</p>
+        <form id="forgot-form">
+          <label>ID de Distribuidor</label>
+          <input type="text" id="fg-code" required autocapitalize="characters" class="upper" />
+          <button class="primary" type="submit">Enviar enlace</button>
+          <div id="fg-feedback" class="hint" style="margin-top:14px;" hidden></div>
+        </form>
+        <a href="#" id="fg-back" style="display:inline-block;margin-top:18px;font-size:12px;color:var(--gold-400);">← Volver al login</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- RESET PASSWORD (token desde hash) -->
+  <section id="reset-screen" class="screen">
+    <div class="login-wrap">
+      <div class="brand-row"><span class="mark">◆</span><span class="name">SHM</span></div>
+      <div class="login-card">
+        <div class="overline">Nueva contraseña</div>
+        <h1>Establece tu contraseña</h1>
+        <form id="reset-form">
+          <label>Nueva contraseña (mín. 8)</label>
+          <input type="password" id="rs-pwd" minlength="8" required />
+          <label>Confirmar contraseña</label>
+          <input type="password" id="rs-pwd2" minlength="8" required />
+          <button class="primary" type="submit">Guardar contraseña</button>
+          <div id="rs-error" class="error" hidden></div>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- COMPLETE PROFILE (primer login) -->
+  <section id="onboarding-screen" class="screen">
+    <div class="login-wrap">
+      <div class="brand-row">
+        <span class="mark">◆</span>
+        <span class="name">SHM</span>
+      </div>
+      <div class="login-card">
+        <div class="overline">Primer ingreso</div>
+        <h1>Completa tu perfil</h1>
+        <p class="legal" style="margin: 0 0 22px;">Para activar tu acceso necesitamos tu nombre, celular y una contraseña personal. Esto reemplaza la contraseña temporal que te enviamos por correo.</p>
+        <form id="onboarding-form">
+          <label>Nombre completo</label>
+          <input type="text" id="onb-name" required placeholder="Tu nombre tal como aparece en tu cuenta BHIP" />
+          <label>Celular</label>
+          <input type="tel" id="onb-phone" required placeholder="+57 300 000 0000" />
+          <label>Nueva contraseña (mín. 8 caracteres)</label>
+          <input type="password" id="onb-pwd" required minlength="8" />
+          <label>Confirmar contraseña</label>
+          <input type="password" id="onb-pwd2" required minlength="8" />
+          <button class="primary" type="submit">Activar mi cuenta</button>
+          <div id="onb-error" class="error" hidden></div>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- APP -->
+  <section id="app-screen" class="screen">
+    <aside class="sidebar">
+      <div class="brand-row">
+        <span class="mark">◆</span>
+        <span class="name">SHM</span>
+      </div>
+      <div class="me-card">
+        <div class="me-name" id="me-name">—</div>
+        <div class="me-role" id="me-role">—</div>
+        <div class="me-scope" id="me-scope"></div>
+      </div>
+      <nav class="nav">
+        <a class="nav-item active" data-view="overview">Resumen</a>
+        <a class="nav-item" data-view="alerts">Alertas <span class="nav-badge" id="alerts-badge" hidden>0</span></a>
+        <a class="nav-item" data-view="comparison">Comparación</a>
+        <a class="nav-item" data-view="funnel">Embudo</a>
+        <a class="nav-item" data-view="team">Mi equipo</a>
+        <a class="nav-item" data-view="wg">Working Group</a>
+        <a class="nav-item" data-view="scanner" data-roles="system_leader,module_leader,productive_leader">Scanner</a>
+        <a class="nav-item" data-view="modules" data-roles="system_leader">Módulos</a>
+        <a class="nav-item" data-view="users">Usuarios</a>
+        <a class="nav-item" data-view="guests">Invitados</a>
+        <a class="nav-item" data-view="messages">Mensajes</a>
+        <a class="nav-item" data-view="events" data-roles="system_leader,module_leader">Eventos</a>
+        <a class="nav-item" data-view="profile">Mi Perfil</a>
+      </nav>
+      <button id="logout-btn" class="ghost-btn">Cerrar sesión</button>
+    </aside>
+
+    <main class="content">
+      <header class="topbar">
+        <button id="menu-toggle" class="menu-toggle" aria-label="Abrir menú">☰</button>
+        <div class="filters">
+          <div class="filter">
+            <label>Mes</label>
+            <input type="month" id="filter-month" />
+          </div>
+          <div class="filter" id="filter-module-wrap">
+            <label>Módulo</label>
+            <select id="filter-module"><option value="">Todos</option></select>
+          </div>
+          <button id="apply-filters" class="primary sm">Aplicar</button>
+        </div>
+        <button id="open-daily-log" class="ghost-btn" style="display:flex;align-items:center;gap:8px;" title="Registrar mi actividad de hoy">
+          <span style="font-size:14px;">✎</span>
+          <span id="daily-log-summary">Registrar hoy</span>
+        </button>
+        <div class="user">
+          <span id="user-code" class="muted"></span>
+        </div>
+      </header>
+
+      <!-- OVERVIEW -->
+      <section class="view view-overview active" data-view="overview">
+        <h2 class="view-title">Resumen del mes</h2>
+        <div class="kpi-grid">
+          <article class="kpi">
+            <div class="overline">KPI 01</div>
+            <div class="kpi-label">Socios Activos del mes</div>
+            <div class="kpi-value" id="kpi-active">—</div>
+            <div class="kpi-sub">Registraron al menos 1 invitado a B.O.M</div>
+          </article>
+          <article class="kpi">
+            <div class="overline">KPI 02</div>
+            <div class="kpi-label">Mensajes por Profesional Firmado</div>
+            <div class="kpi-value" id="kpi-msgs">—</div>
+            <div class="kpi-sub">Promedio para lograr 1 firma</div>
+          </article>
+          <article class="kpi">
+            <div class="overline">KPI 03</div>
+            <div class="kpi-label">Conversión B.I.T → Firmado</div>
+            <div class="kpi-value" id="kpi-conv">—</div>
+            <div class="kpi-sub">% de invitados que llegan a la firma</div>
+          </article>
+        </div>
+        <div class="grid-2">
+          <article class="panel">
+            <header class="panel-head"><h3>Actividad mensual</h3></header>
+            <canvas id="chart-monthly"></canvas>
+          </article>
+          <article class="panel" id="modules-panel">
+            <header class="panel-head"><h3>Comparación entre módulos</h3></header>
+            <canvas id="chart-modules"></canvas>
+          </article>
+        </div>
+      </section>
+
+      <!-- ALERTS -->
+      <section class="view" data-view="alerts">
+        <h2 class="view-title">Alertas del sistema</h2>
+        <p class="hint" style="margin: 0 0 22px;">Cuatro tipos de alerta filtradas por tu rol y módulo. Las alertas se recalculan cada hora y en cada scan.</p>
+        <div class="alert-grid">
+          <article class="alert-block" data-bucket="orange_color">
+            <header class="alert-block-head">
+              <span class="alert-icon" style="background:#FF7B3D;">●</span>
+              <div>
+                <h3>Color naranja</h3>
+                <p>Faltas consecutivas — requiere intervención del Líder Productivo y de Módulo</p>
+              </div>
+              <span class="alert-count" id="ac-orange_color">0</span>
+            </header>
+            <div class="alert-list" id="al-orange_color"></div>
+          </article>
+          <article class="alert-block" data-bucket="no_messages_48h">
+            <header class="alert-block-head">
+              <span class="alert-icon" style="background:var(--gold-500);">◷</span>
+              <div>
+                <h3>Sin mensajes en 48h</h3>
+                <p>Profesionales Activos que no actualizan su registro de mensajes</p>
+              </div>
+              <span class="alert-count" id="ac-no_messages_48h">0</span>
+            </header>
+            <div class="alert-list" id="al-no_messages_48h"></div>
+          </article>
+          <article class="alert-block" data-bucket="near_two_weeks_bit">
+            <header class="alert-block-head">
+              <span class="alert-icon" style="background:#D9B871;">⌛</span>
+              <div>
+                <h3>Cerca de 2 semanas desde B.I.T</h3>
+                <p>Seguimientos en ventana final (11–16 días) sin firmar</p>
+              </div>
+              <span class="alert-count" id="ac-near_two_weeks_bit">0</span>
+            </header>
+            <div class="alert-list" id="al-near_two_weeks_bit"></div>
+          </article>
+          <article class="alert-block" data-bucket="two_weeks_wg">
+            <header class="alert-block-head">
+              <span class="alert-icon" style="background:var(--teal-400);">✦</span>
+              <div>
+                <h3>2 semanas de WG consecutivas</h3>
+                <p>Alta probabilidad de firma — destacar y dar empuje final</p>
+              </div>
+              <span class="alert-count" id="ac-two_weeks_wg">0</span>
+            </header>
+            <div class="alert-list" id="al-two_weeks_wg"></div>
+          </article>
+        </div>
+      </section>
+
+      <!-- COMPARISON -->
+      <section class="view" data-view="comparison">
+        <h2 class="view-title">Comparación de producción</h2>
+        <div class="grid-2">
+          <article class="panel">
+            <header class="panel-head"><h3>Esta semana vs. anterior</h3></header>
+            <div id="cmp-weekly"></div>
+          </article>
+          <article class="panel">
+            <header class="panel-head"><h3>Este mes vs. anterior</h3></header>
+            <div id="cmp-monthly"></div>
+          </article>
+        </div>
+      </section>
+
+      <!-- FUNNEL -->
+      <section class="view" data-view="funnel">
+        <h2 class="view-title">Embudo de prospección</h2>
+        <article class="panel"><div id="funnel-list"></div></article>
+      </section>
+
+      <!-- TEAM (vista detallada por rol) -->
+      <section class="view" data-view="team">
+        <h2 class="view-title" id="team-title">Mi equipo</h2>
+        <div id="team-content"></div>
+      </section>
+
+      <!-- WG -->
+      <section class="view" data-view="wg">
+        <h2 class="view-title">Working Group — Calendario semanal</h2>
+        <p class="hint" style="margin: 0 0 18px;">
+          El WG corre <strong>paralelo</strong> al embudo. Semana 1 = 4 días (Mar+Mié+Jue+Vie). Semana 2+ = 5 días (Lun-Vie).
+          Completar <strong>2 semanas consecutivas</strong> dispara la probabilidad de firma.
+        </p>
+        <div class="kpi-grid">
+          <article class="kpi" style="border-color: rgba(70, 176, 168, 0.4);">
+            <div class="overline" style="color: var(--teal-400);">🟢 Sólido</div>
+            <div class="kpi-label">2+ semanas consecutivas completas</div>
+            <div class="kpi-value" id="wg-solid" style="color: var(--teal-400);">—</div>
+            <div class="kpi-sub">Alta probabilidad de firma</div>
+          </article>
+          <article class="kpi" style="border-color: rgba(217, 184, 113, 0.4);">
+            <div class="overline" style="color: var(--gold-400);">🟡 Irregular</div>
+            <div class="kpi-label">Asistencia incompleta</div>
+            <div class="kpi-value" id="wg-irregular" style="color: var(--gold-400);">—</div>
+            <div class="kpi-sub">Requiere refuerzo</div>
+          </article>
+          <article class="kpi" style="border-color: rgba(255, 123, 61, 0.5);">
+            <div class="overline" style="color: #FFB07A;">🟠 En riesgo</div>
+            <div class="kpi-label">Color Naranja</div>
+            <div class="kpi-value" id="wg-orange" style="color: #FFB07A;">—</div>
+            <div class="kpi-sub">2 faltas consecutivas</div>
+          </article>
+        </div>
+        <article class="panel">
+          <header class="panel-head">
+            <h3>Calendario por seguimiento</h3>
+            <select id="wg-filter">
+              <option value="">Todos</option>
+              <option value="solid">🟢 Sólido (2+ semanas)</option>
+              <option value="irregular">🟡 Irregular</option>
+              <option value="orange">🟠 Naranja</option>
+            </select>
+          </header>
+          <div id="wg-calendar"></div>
+        </article>
+      </section>
+
+      <!-- MODULES -->
+      <section class="view" data-view="modules">
+        <h2 class="view-title">Módulos</h2>
+        <article class="panel">
+          <header class="panel-head">
+            <h3>Listado</h3>
+            <button id="new-module" class="primary sm">+ Nuevo módulo</button>
+          </header>
+          <div class="table-wrap"><table class="table">
+            <thead><tr><th>#</th><th>Nombre</th><th>Miembros</th><th>Estado</th><th></th></tr></thead>
+            <tbody id="modules-tbody"></tbody>
+          </table></div>
+        </article>
+      </section>
+
+      <!-- USERS -->
+      <section class="view" data-view="users">
+        <h2 class="view-title">Usuarios del sistema</h2>
+        <article class="panel">
+          <header class="panel-head">
+            <h3>Listado por rol</h3>
+            <button id="new-user" class="primary sm">+ Nuevo usuario</button>
+          </header>
+          <div class="filter-bar">
+            <select id="users-role-filter">
+              <option value="">Todos los roles</option>
+              <option value="system_leader">Líder de Sistema</option>
+              <option value="module_leader">Líder de Módulo</option>
+              <option value="productive_leader">Líder Productivo</option>
+              <option value="distributor">Profesional Activo</option>
+            </select>
+          </div>
+          <div class="table-wrap"><table class="table">
+            <thead><tr><th>Nombre</th><th>Rol</th><th>Rango BHIP</th><th>Módulo</th><th>Mesa</th><th>ID BHIP</th><th>Último mensaje</th><th>Estado</th><th></th></tr></thead>
+            <tbody id="users-tbody"></tbody>
+          </table></div>
+        </article>
+      </section>
+
+      <!-- GUESTS -->
+      <section class="view" data-view="guests">
+        <h2 class="view-title">Invitados</h2>
+        <article class="panel">
+          <header class="panel-head">
+            <h3>Embudo individual</h3>
+            <input id="guest-search" type="text" placeholder="Buscar por nombre, correo o teléfono..." class="search" />
+          </header>
+          <div class="filter-bar" style="display:flex;gap:12px;align-items:center;max-width:none;">
+            <select id="guests-color-filter" style="max-width:220px;">
+              <option value="">Todos los colores</option>
+              <option value="none">Sin color</option>
+              <option value="light_green">Verde claro</option>
+              <option value="strong_green">Verde fuerte</option>
+              <option value="yellow">Amarillo</option>
+              <option value="orange">Naranja</option>
+              <option value="red">Rojo</option>
+              <option value="black">Negro</option>
+            </select>
+            <span class="muted" style="font-size:11px;letter-spacing:1.5px;">Filtro por color del seguimiento</span>
+          </div>
+          <div class="table-wrap"><table class="table">
+            <thead><tr><th>Invitado</th><th>Distribuidor</th><th>Mód</th><th>Etapa</th><th>Color</th><th>B.I.T</th><th>WG</th><th>Acciones</th></tr></thead>
+            <tbody id="guests-tbody"></tbody>
+          </table></div>
+        </article>
+      </section>
+
+      <!-- MESSAGES -->
+      <section class="view" data-view="messages">
+        <h2 class="view-title">Registro de actividad diaria</h2>
+        <article class="panel">
+          <header class="panel-head"><h3>Registrar mensajes + books del día</h3></header>
+          <form id="msg-form" class="form-row" style="grid-template-columns: 2fr 1fr 1fr 1fr auto;">
+            <div class="field"><label>Usuario</label><select id="msg-user"></select></div>
+            <div class="field"><label>Fecha</label><input type="date" id="msg-date" /></div>
+            <div class="field"><label>Mensajes enviados</label><input type="number" inputmode="numeric" id="msg-count" min="0" placeholder="0" /></div>
+            <div class="field"><label>Books del día</label><input type="number" inputmode="numeric" id="msg-books" min="0" value="0" /></div>
+            <button class="primary sm" type="submit">Guardar</button>
+          </form>
+          <div class="hint">Si no actualizas tu registro de mensajes en más de 48 horas, tu código se bloquea automáticamente. Books pueden ser 0.</div>
+        </article>
+        <article class="panel">
+          <header class="panel-head"><h3>Totales por usuario</h3></header>
+          <div class="table-wrap"><table class="table">
+            <thead><tr><th>Nombre</th><th>Rol</th><th>Módulo</th><th>Total mensajes</th><th>Books</th><th>Días registrados</th></tr></thead>
+            <tbody id="msg-totals"></tbody>
+          </table></div>
+          <div class="hint">El número de books se actualiza automáticamente con cada registro diario de los usuarios. No es editable desde esta tabla.</div>
+        </article>
+      </section>
+
+      <!-- EVENTS -->
+      <section class="view" data-view="events">
+        <h2 class="view-title">Eventos del calendario semanal</h2>
+        <article class="panel">
+          <header class="panel-head">
+            <h3>Eventos programados</h3>
+            <button id="new-event" class="primary sm">+ Nuevo evento</button>
+          </header>
+          <p class="hint" style="margin: 0 0 16px;">Los eventos semanales se repiten automáticamente cada semana en los días configurados. <strong>FIRMADO</strong> no es un evento del calendario — es un cambio manual desde "Invitados".</p>
+          <div class="table-wrap"><table class="table">
+            <thead><tr><th>Nombre</th><th>Etapa objetivo</th><th>Recurrencia</th><th>Estado</th><th></th></tr></thead>
+            <tbody id="events-tbody"></tbody>
+          </table></div>
+        </article>
+      </section>
+
+      <!-- SCANNER -->
+      <section class="view" data-view="scanner">
+        <h2 class="view-title">Scanner</h2>
+        <p class="hint" style="margin: 0 0 18px;">Escanea el QR del seguimiento durante el evento. Confirma la asistencia para registrarla. El QR es único por seguimiento desde su registro hasta que se firme.</p>
+
+        <article class="panel scanner-panel">
+          <div class="scanner-event">
+            <label>Evento activo hoy</label>
+            <select id="sc-event"></select>
+            <div class="scanner-event-meta">
+              <span id="sc-event-stage" class="tag gold">—</span>
+              <span id="sc-event-date" class="muted"></span>
+            </div>
+          </div>
+
+          <div class="scanner-counter">
+            <span class="muted" style="font-size:11px;letter-spacing:3px;text-transform:uppercase;">Escaneos hoy</span>
+            <span class="scanner-counter-value" id="sc-today-count">0</span>
+          </div>
+
+          <div class="scan-area" id="sc-area">
+            <video id="sc-video" playsinline muted></video>
+            <div class="scan-frame"></div>
+            <div class="scan-hint" id="sc-hint">Toca "Activar cámara"</div>
+          </div>
+
+          <div class="scanner-controls">
+            <button class="primary" id="sc-start">📷 Activar cámara</button>
+            <button class="ghost-btn" id="sc-stop" hidden>Pausar cámara</button>
+            <button class="ghost-btn" id="sc-manual-toggle">No tiene el QR — buscar por correo</button>
+          </div>
+
+          <div id="sc-manual-pane" hidden style="margin-top:12px;">
+            <label style="display:block;font-size:10px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;margin-bottom:6px;">Correo del invitado</label>
+            <input id="sc-manual-input" type="email" inputmode="email" placeholder="correo@dominio.com" autocomplete="off" style="margin-bottom:10px;" />
+            <button class="primary" id="sc-manual-submit">Buscar</button>
+          </div>
+
+          <div id="sc-preview" hidden></div>
+        </article>
+
+        <article class="panel">
+          <header class="panel-head"><h3>Últimos escaneos de esta sesión</h3></header>
+          <div id="sc-recent" class="scanner-recent"></div>
+        </article>
+      </section>
+
+      <!-- PROFILE -->
+      <section class="view" data-view="profile">
+        <h2 class="view-title">Mi Perfil</h2>
+        <div class="grid-2">
+          <article class="panel">
+            <header class="panel-head"><h3>Datos de la cuenta</h3></header>
+            <div id="profile-info" class="profile-grid"></div>
+          </article>
+          <article class="panel">
+            <header class="panel-head"><h3>Cambiar contraseña</h3></header>
+            <form id="pwd-form">
+              <div class="field"><label>Contraseña actual</label><input type="password" id="pwd-current" required /></div>
+              <div class="field"><label>Nueva contraseña (mín. 8)</label><input type="password" id="pwd-new" required minlength="8" /></div>
+              <div class="field"><label>Confirmar nueva contraseña</label><input type="password" id="pwd-new2" required minlength="8" /></div>
+              <button class="primary sm" type="submit">Actualizar contraseña</button>
+              <div id="pwd-feedback" class="hint" style="margin-top:14px;" hidden></div>
+            </form>
+          </article>
+        </div>
+      </section>
+
+    </main>
+  </section>
+
+  <div id="modal" class="modal" hidden>
+    <div class="modal-card">
+      <header class="modal-head">
+        <h3 id="modal-title">Modal</h3>
+        <button id="modal-close" class="ghost-btn">Cerrar</button>
+      </header>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="/scanner/assets/zxing.min.js"></script>
+  <script src="config.js"></script>
+  <script src="assets/app.js"></script>
+</body>
+</html>
