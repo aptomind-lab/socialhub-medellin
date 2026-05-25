@@ -3,7 +3,7 @@ const rateLimit = require('express-rate-limit');
 const { customAlphabet } = require('nanoid');
 const db = require('../db');
 const { requireAuth, requireRole, scopeUsersClause } = require('../middleware/auth');
-const { refreshUserBlock, isDistributorUsable } = require('../utils/blocking');
+const { refreshUserBlock, isContactorUsable, CONTACTOR_ROLES } = require('../utils/blocking');
 const { generateQrDataUrl, generateQrBuffer } = require('../utils/qrcode');
 const { sendQrEmail } = require('../utils/email');
 const colors = require('../utils/colors');
@@ -28,15 +28,17 @@ router.post('/register', registerLimiter, async (req, res) => {
     return res.status(400).json({ error: 'Todos los campos son obligatorios' });
   }
 
-  const distributor = db.prepare('SELECT * FROM users WHERE distributor_code = ?')
+  // Opción B: aceptamos los 4 roles como contactadores (distributor, PL, ML, SL).
+  // El campo distributor_id en guests es el "id del contactador" — no requiere que sea distributor.
+  const contactor = db.prepare('SELECT * FROM users WHERE distributor_code = ?')
     .get(String(access_code).toUpperCase().trim());
-  if (!distributor || distributor.role !== 'distributor') {
+  if (!contactor || !CONTACTOR_ROLES.includes(contactor.role)) {
     return res.status(400).json({ error: 'Código de acceso inválido' });
   }
 
-  refreshUserBlock(distributor.id);
-  const fresh = db.prepare('SELECT * FROM users WHERE id = ?').get(distributor.id);
-  const usable = isDistributorUsable(fresh);
+  refreshUserBlock(contactor.id);
+  const fresh = db.prepare('SELECT * FROM users WHERE id = ?').get(contactor.id);
+  const usable = isContactorUsable(fresh);
   if (!usable.ok) {
     return res.status(403).json({
       error: 'Este código de acceso no se encuentra disponible en este momento. Contacta a tu invitador.',
@@ -47,7 +49,7 @@ router.post('/register', registerLimiter, async (req, res) => {
   const info = db.prepare(`
     INSERT INTO guests (full_name, email, phone, distributor_id, qr_token, current_stage)
     VALUES (?, ?, ?, ?, ?, 'REGISTRO')
-  `).run(full_name.trim(), email.toLowerCase().trim(), phone.trim(), distributor.id, token);
+  `).run(full_name.trim(), email.toLowerCase().trim(), phone.trim(), contactor.id, token);
 
   db.prepare(`
     INSERT INTO stage_history (guest_id, from_stage, to_stage, notes)

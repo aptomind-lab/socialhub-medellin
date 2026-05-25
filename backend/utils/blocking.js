@@ -42,9 +42,22 @@ function isDistributorUsable(user) {
   return { ok: true };
 }
 
+// Para el flujo del landing: cualquier rol puede contactar invitados (Opción B).
+// Validamos solo que esté activo y no bloqueado.
+const CONTACTOR_ROLES = ['distributor', 'productive_leader', 'module_leader', 'system_leader'];
+function isContactorUsable(user) {
+  if (!user) return { ok: false, reason: 'NOT_FOUND' };
+  if (!CONTACTOR_ROLES.includes(user.role)) return { ok: false, reason: 'INVALID_ROLE' };
+  if (!user.active) return { ok: false, reason: 'INACTIVE' };
+  if (user.blocked) return { ok: false, reason: 'BLOCKED' };
+  return { ok: true };
+}
+
 module.exports = {
   refreshUserBlock,
   refreshAllUserBlocks,
   isDistributorUsable,
+  isContactorUsable,
+  CONTACTOR_ROLES,
   hoursSince,
 };
