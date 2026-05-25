@@ -6,15 +6,33 @@ function getTransporter() {
   if (transporter) return transporter;
   if (!process.env.SMTP_HOST) return null;
 
+  // Gmail App Passwords se muestran con espacios cada 4 chars solo por estética;
+  // el SMTP los rechaza con espacios. Los limpiamos.
+  const pass = (process.env.SMTP_PASS || '').replace(/\s+/g, '');
+
   transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
     port: parseInt(process.env.SMTP_PORT || '587', 10),
     secure: process.env.SMTP_SECURE === 'true',
-    auth: process.env.SMTP_USER
-      ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
-      : undefined,
+    auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass } : undefined,
+    // Timeouts cortos: si Railway bloquea SMTP, fallamos rápido en vez de colgar 3 min.
+    connectionTimeout: 8000,
+    greetingTimeout: 5000,
+    socketTimeout: 10000,
   });
   return transporter;
+}
+
+// Endpoint de diagnóstico: verifica que el SMTP responde sin enviar correo real.
+async function verifySmtp() {
+  const tr = getTransporter();
+  if (!tr) return { ok: false, reason: 'SMTP no configurado (SMTP_HOST vacío)' };
+  try {
+    await tr.verify();
+    return { ok: true, host: process.env.SMTP_HOST, port: process.env.SMTP_PORT, user: process.env.SMTP_USER };
+  } catch (err) {
+    return { ok: false, reason: err.message, code: err.code };
+  }
 }
 
 function buildQrEmailHtml({ guestName, qrCid }) {
@@ -226,4 +244,4 @@ async function sendAdminResetEmail({ to, name, distributorCode, password }) {
   return { messageId: info.messageId, login_url: loginUrl };
 }
 
-module.exports = { sendQrEmail, sendWelcomeEmail, sendPasswordResetEmail, sendAdminResetEmail };
+module.exports = { sendQrEmail, sendWelcomeEmail, sendPasswordResetEmail, sendAdminResetEmail, verifySmtp };

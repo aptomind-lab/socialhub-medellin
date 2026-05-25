@@ -56,21 +56,42 @@ router.post('/register', registerLimiter, async (req, res) => {
     VALUES (?, NULL, 'REGISTRO', 'Registro inicial vía landing')
   `).run(info.lastInsertRowid);
 
+  // Generamos el QR UNA sola vez (buffer) y de ahí derivamos el data URL.
+  // Antes se generaba 2 veces (buffer para email + dataUrl para respuesta).
   const qrPayload = `${process.env.PUBLIC_BASE_URL || ''}/g/${token}`;
-  let emailStatus = { skipped: true };
+  let qrBuffer, qrDataUrl;
   try {
-    const buf = await generateQrBuffer(qrPayload);
-    emailStatus = await sendQrEmail({ to: email, guestName: full_name, qrBuffer: buf });
+    qrBuffer = await generateQrBuffer(qrPayload);
+    qrDataUrl = `data:image/png;base64,${qrBuffer.toString('base64')}`;
   } catch (err) {
-    console.error('[guests/register] email error:', err.message);
+    console.error('[guests/register] qr generation error:', err.message);
+    // Fallback al método antiguo si el buffer falla
+    qrDataUrl = await generateQrDataUrl(qrPayload);
   }
 
+  // Respondemos YA — sin esperar al SMTP. Si email falla/timea no afecta UX del registro.
   res.status(201).json({
     ok: true,
     guest_id: info.lastInsertRowid,
-    qr_data_url: await generateQrDataUrl(qrPayload),
-    email_sent: !emailStatus.skipped,
+    qr_data_url: qrDataUrl,
+    email_sent: 'pending', // el cliente sabe que el envío va aparte
   });
+
+  // Fire-and-forget: enviamos el email después de responder.
+  // Errores quedan en el log de Railway, no afectan al usuario.
+  if (qrBuffer) {
+    setImmediate(() => {
+      sendQrEmail({ to: email, guestName: full_name, qrBuffer })
+        .then((result) => {
+          if (result.skipped) console.warn('[register/email] SMTP no configurado');
+          else console.log(`[register/email] enviado a ${email}: ${result.messageId}`);
+        })
+        .catch((err) => {
+          console.error(`[register/email] FALLO a ${email}:`, err.code || '', err.message);
+          if (err.response) console.error('  SMTP response:', err.response);
+        });
+    });
+  }
 });
 
 // LISTA — filtrada por jerarquía. Joins contra users (distributor) para aplicar scope

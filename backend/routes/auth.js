@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const db = require('../db');
 const { signToken, requireAuth } = require('../middleware/auth');
 const { ROLE_LABELS } = require('../utils/stages');
-const { sendPasswordResetEmail } = require('../utils/email');
+const { sendPasswordResetEmail, verifySmtp } = require('../utils/email');
 
 const router = express.Router();
 
@@ -122,6 +122,14 @@ router.post('/reset-password', (req, res) => {
     db.prepare(`UPDATE password_resets SET used_at = datetime('now') WHERE id = ?`).run(rec.id);
   })();
   res.json({ ok: true });
+});
+
+// Diagnóstico SMTP — solo Líder de Sistema. Verifica conexión sin enviar correo real.
+router.get('/smtp-test', requireAuth, (req, res) => {
+  if (req.user.role !== 'system_leader') {
+    return res.status(403).json({ error: 'Solo Líder de Sistema' });
+  }
+  verifySmtp().then((result) => res.json(result));
 });
 
 function publicUser(u) {
