@@ -104,4 +104,7 @@ if (eventCount === 0) {
 }
 
 console.log('✓ Base de datos lista');
-process.exit(0);
+
+// Solo salimos cuando se invoca como CLI (`node db/init.js`).
+// Si server.js hace require('./db/init') en BD vacía, NO debemos matar el proceso.
+if (require.main === module) process.exit(0);
