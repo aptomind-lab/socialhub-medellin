@@ -1,5 +1,5 @@
 (function () {
-  const API = window.SOCIALHUB_API || 'http://localhost:4000';
+  const API = window.SOCIALHUB_API || 'https://web-production-5c3eb.up.railway.app';
   const STORAGE_TOKEN = 'sh_scanner_token';
 
   const $ = (id) => document.getElementById(id);

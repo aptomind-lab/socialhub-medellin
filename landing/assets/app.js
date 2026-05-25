@@ -1,5 +1,5 @@
 (function () {
-  const API_BASE = window.SOCIALHUB_API || 'http://localhost:4000';
+  const API_BASE = window.SOCIALHUB_API || 'https://web-production-5c3eb.up.railway.app';
 
   const form = document.getElementById('register-form');
   const errorBox = document.getElementById('error');
