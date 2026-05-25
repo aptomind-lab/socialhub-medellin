@@ -1,19 +1,15 @@
 {
-  "name": "socialhub-medellin",
+  "name": "shm-platform",
   "version": "1.0.0",
   "private": true,
-  "description": "Monorepo: backend (Node/Express/SQLite) + 3 frontends estáticos (landing, dashboard, scanner)",
+  "description": "SHM — backend (Node/Express/SQLite) + 3 frontends estáticos servidos desde el mismo backend",
   "engines": {
     "node": ">=18"
   },
   "scripts": {
-    "build": "node scripts/inject-api-url.js",
-    "vercel-build": "node scripts/inject-api-url.js",
-    "dev:backend": "cd backend && npm run dev",
-    "start:backend": "cd backend && npm start",
+    "start": "cd backend && node server.js",
+    "dev": "cd backend && npm run dev",
+    "install:backend": "cd backend && npm ci --omit=dev",
     "init-db": "cd backend && npm run init-db"
-  },
-  "workspaces": [
-    "backend"
-  ]
+  }
 }

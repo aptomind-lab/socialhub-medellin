@@ -1,5 +1,8 @@
-# Nixpacks usa esto para entender que es un proyecto Node con el server en backend/.
-# Sin esto, podría confundirse por el package.json del root (que es para Vercel).
+# Nixpacks: el backend Node vive en /backend.
+# Forzamos los comandos para que NO se confunda con el package.json del root.
+# better-sqlite3 requiere compilar binarios nativos → python3 + gcc + make.
+
+providers = ["node"]
 
 [phases.setup]
 nixPkgs = ["nodejs-20_x", "python3", "gcc", "gnumake"]
@@ -8,7 +11,7 @@ nixPkgs = ["nodejs-20_x", "python3", "gcc", "gnumake"]
 cmds = ["cd backend && npm ci --omit=dev"]
 
 [phases.build]
-cmds = ["echo 'Backend listo'"]
+cmds = ["echo 'Frontends son estáticos — sin build step.'"]
 
 [start]
 cmd = "cd backend && node server.js"
