@@ -80,8 +80,14 @@ app.get('/g/:token', (req, res) => {
 try {
   const db = require('./db');
   const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='users'").get();
-  if (!tables) {
-    console.log('Inicializando base de datos...');
+  let needsSeed = !tables;
+  if (tables) {
+    // Tabla existe pero ¿hay usuarios? Si está vacía, también sembrar.
+    const userCount = db.prepare("SELECT COUNT(*) AS c FROM users").get().c;
+    if (userCount === 0) needsSeed = true;
+  }
+  if (needsSeed) {
+    console.log('Inicializando base de datos (auto-seed)...');
     require('./db/init');
   }
 } catch (err) {
