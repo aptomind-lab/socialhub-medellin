@@ -14,4 +14,6 @@ cmds = ["cd backend && npm ci --omit=dev"]
 cmds = ["echo 'Frontends son estáticos — sin build step.'"]
 
 [start]
-cmd = "cd backend && node server.js"
+# Cargamos /root/.profile para exponer las libs nativas que better-sqlite3 necesita
+# (Nixpacks compila el binding contra paths del Nix store y .profile los pone en LD_LIBRARY_PATH).
+cmd = "bash -lc 'source /root/.profile && cd backend && node server.js'"

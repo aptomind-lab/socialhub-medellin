@@ -7,7 +7,7 @@
     "node": ">=18"
   },
   "scripts": {
-    "start": "cd backend && node server.js",
+    "start": "bash -lc 'source /root/.profile 2>/dev/null; cd backend && node server.js'",
     "dev": "cd backend && npm run dev",
     "install:backend": "cd backend && npm ci --omit=dev",
     "init-db": "cd backend && npm run init-db"
