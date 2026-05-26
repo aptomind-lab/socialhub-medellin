@@ -11,7 +11,7 @@ function getClient() {
   return client;
 }
 
-const FROM_ADDRESS = 'SHM <noreply@trabajaparavivir.com>';
+const FROM_ADDRESS = 'SHM <noreply@contacto.trabajaparavivir.com>';
 
 // Diagnóstico: confirma que la API key está presente y el SDK puede instanciarse.
 // (Se mantiene el nombre verifySmtp por compatibilidad con routes/auth.js.)
