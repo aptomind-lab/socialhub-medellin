@@ -52,7 +52,7 @@ async function sendViaResend({ to, subject, html, attachments }) {
 
 // ─────── Templates HTML ───────
 
-function buildQrEmailHtml({ guestName, qrCid }) {
+function buildQrEmailHtml({ guestName, qrBase64 }) {
   return `<!DOCTYPE html>
 <html lang="es">
 <head><meta charset="UTF-8"><title>SHM — Tu acceso</title></head>
@@ -72,7 +72,7 @@ function buildQrEmailHtml({ guestName, qrCid }) {
         </td></tr>
         <tr><td align="center" style="padding:30px 40px;">
           <div style="background:#F5EFE2;padding:18px;border-radius:10px;display:inline-block;">
-            <img src="cid:${qrCid}" alt="QR de acceso" width="240" height="240" style="display:block;">
+            <img src="data:image/png;base64,${qrBase64}" alt="QR de acceso" width="240" height="240" style="display:block;">
           </div>
         </td></tr>
         <tr><td style="padding:0 40px 36px 40px;text-align:center;">
@@ -190,15 +190,17 @@ function buildAdminResetEmailHtml({ name, distributorCode, password, loginUrl })
 // ─────── Funciones públicas (signatures idénticas) ───────
 
 async function sendQrEmail({ to, guestName, qrBuffer }) {
-  const cid = `qr-${Date.now()}@shm`;
+  // Resend no soporta CID inline confiablemente — incrustamos el PNG como base64
+  // directamente en el src del <img>. Además adjuntamos el archivo qr.png para
+  // que el invitado pueda descargarlo si su cliente bloquea data: URIs.
+  const qrBase64 = Buffer.isBuffer(qrBuffer) ? qrBuffer.toString('base64') : qrBuffer;
   return sendViaResend({
     to,
     subject: 'SHM — Tu QR de acceso',
-    html: buildQrEmailHtml({ guestName, qrCid: cid }),
+    html: buildQrEmailHtml({ guestName, qrBase64 }),
     attachments: [{
       filename: 'qr.png',
-      content: qrBuffer,
-      content_id: cid,
+      content: qrBase64,
     }],
   });
 }
