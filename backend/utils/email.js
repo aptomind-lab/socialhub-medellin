@@ -31,14 +31,19 @@ async function verifySmtp() {
 }
 
 // ─────── Helper genérico ───────
-async function sendViaResend({ to, subject, html, attachments }) {
+async function sendViaResend({ to, subject, html, text, attachments }) {
   const r = getClient();
   if (!r) {
     console.warn(`[email] RESEND_API_KEY no configurada — omitiendo envío a ${to}`);
     return { skipped: true };
   }
+  if (!html) {
+    console.error(`[email] HTML vacío para ${to} (${subject}) — esto causaría email sin diseño`);
+  }
   const payload = { from: FROM_ADDRESS, to, subject, html };
+  if (text) payload.text = text;
   if (attachments && attachments.length) payload.attachments = attachments;
+  console.log(`[email] enviando "${subject}" a ${to} — html=${html?.length || 0}B, attachments=${attachments?.length || 0}`);
   const result = await r.emails.send(payload);
   if (result.error) {
     const msg = result.error.message || JSON.stringify(result.error);
@@ -190,18 +195,16 @@ function buildAdminResetEmailHtml({ name, distributorCode, password, loginUrl })
 // ─────── Funciones públicas (signatures idénticas) ───────
 
 async function sendQrEmail({ to, guestName, qrBuffer }) {
-  // Resend no soporta CID inline confiablemente — incrustamos el PNG como base64
-  // directamente en el src del <img>. Además adjuntamos el archivo qr.png para
-  // que el invitado pueda descargarlo si su cliente bloquea data: URIs.
+  // Resend no soporta CID inline. Embedemos el PNG como base64 en el <img>.
+  // NO usamos attachment: cuando hay attachment de imagen Gmail lo muestra como
+  // "vista de adjunto" y oculta el HTML del email — quedaba solo el QR sin diseño.
   const qrBase64 = Buffer.isBuffer(qrBuffer) ? qrBuffer.toString('base64') : qrBuffer;
+  const html = buildQrEmailHtml({ guestName, qrBase64 });
   return sendViaResend({
     to,
     subject: 'SHM — Tu QR de acceso',
-    html: buildQrEmailHtml({ guestName, qrBase64 }),
-    attachments: [{
-      filename: 'qr.png',
-      content: qrBase64,
-    }],
+    html,
+    text: `${guestName}, te damos la bienvenida a SHM.\n\nTu QR de acceso personal viene incrustado en este correo. Si tu cliente no lo muestra, ábrelo en otro navegador o cliente.\n\nConserva este correo — tu QR es personal e intransferible.`,
   });
 }
 
