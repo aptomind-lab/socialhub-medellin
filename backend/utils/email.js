@@ -1,53 +1,67 @@
-const nodemailer = require('nodemailer');
+// Envío de email con Resend SDK.
+// Variable requerida: RESEND_API_KEY (configurar en Railway).
+// From: onboarding@resend.dev (sandbox de Resend) hasta configurar dominio propio.
+const { Resend } = require('resend');
 
-let transporter = null;
-
-function getTransporter() {
-  if (transporter) return transporter;
-  if (!process.env.SMTP_HOST) return null;
-
-  // Gmail App Passwords se muestran con espacios cada 4 chars solo por estética;
-  // el SMTP los rechaza con espacios. Los limpiamos.
-  const pass = (process.env.SMTP_PASS || '').replace(/\s+/g, '');
-
-  transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: parseInt(process.env.SMTP_PORT || '587', 10),
-    secure: process.env.SMTP_SECURE === 'true',
-    auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass } : undefined,
-    // Timeouts cortos: si Railway bloquea SMTP, fallamos rápido en vez de colgar 3 min.
-    connectionTimeout: 8000,
-    greetingTimeout: 5000,
-    socketTimeout: 10000,
-  });
-  return transporter;
+let client = null;
+function getClient() {
+  if (client) return client;
+  if (!process.env.RESEND_API_KEY) return null;
+  client = new Resend(process.env.RESEND_API_KEY);
+  return client;
 }
 
-// Endpoint de diagnóstico: verifica que el SMTP responde sin enviar correo real.
+const FROM_ADDRESS = 'SHM <onboarding@resend.dev>';
+
+// Diagnóstico: confirma que la API key está presente y el SDK puede instanciarse.
+// (Se mantiene el nombre verifySmtp por compatibilidad con routes/auth.js.)
 async function verifySmtp() {
-  const tr = getTransporter();
-  if (!tr) return { ok: false, reason: 'SMTP no configurado (SMTP_HOST vacío)' };
+  if (!process.env.RESEND_API_KEY) {
+    return { ok: false, reason: 'RESEND_API_KEY no configurada' };
+  }
   try {
-    await tr.verify();
-    return { ok: true, host: process.env.SMTP_HOST, port: process.env.SMTP_PORT, user: process.env.SMTP_USER };
+    // Intenta listar dominios — endpoint barato que valida la API key.
+    const r = getClient();
+    const result = await r.domains.list();
+    if (result.error) return { ok: false, reason: result.error.message || 'API key inválida', code: result.error.name };
+    return { ok: true, provider: 'resend', from: FROM_ADDRESS, domains: (result.data?.data || []).length };
   } catch (err) {
-    return { ok: false, reason: err.message, code: err.code };
+    return { ok: false, reason: err.message, code: err.name };
   }
 }
+
+// ─────── Helper genérico ───────
+async function sendViaResend({ to, subject, html, attachments }) {
+  const r = getClient();
+  if (!r) {
+    console.warn(`[email] RESEND_API_KEY no configurada — omitiendo envío a ${to}`);
+    return { skipped: true };
+  }
+  const payload = { from: FROM_ADDRESS, to, subject, html };
+  if (attachments && attachments.length) payload.attachments = attachments;
+  const result = await r.emails.send(payload);
+  if (result.error) {
+    const msg = result.error.message || JSON.stringify(result.error);
+    const err = new Error(msg);
+    err.code = result.error.name;
+    err.response = result.error;
+    throw err;
+  }
+  return { messageId: result.data?.id };
+}
+
+// ─────── Templates HTML ───────
 
 function buildQrEmailHtml({ guestName, qrCid }) {
   return `<!DOCTYPE html>
 <html lang="es">
-<head>
-<meta charset="UTF-8">
-<title>SocialHub Medellín — Tu acceso</title>
-</head>
+<head><meta charset="UTF-8"><title>SHM — Tu acceso</title></head>
 <body style="margin:0;padding:0;background:#0B1B2B;font-family:Georgia,'Cormorant Garamond',serif;color:#F5EFE2;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#0B1B2B;padding:40px 0;">
     <tr><td align="center">
       <table width="560" cellpadding="0" cellspacing="0" style="background:#0F2236;border:1px solid #C9A24A;border-radius:14px;overflow:hidden;">
         <tr><td style="padding:36px 40px 8px 40px;text-align:center;">
-          <div style="font-size:11px;letter-spacing:6px;color:#C9A24A;text-transform:uppercase;">SocialHub Medellín</div>
+          <div style="font-size:11px;letter-spacing:6px;color:#C9A24A;text-transform:uppercase;">SHM</div>
           <h1 style="margin:14px 0 0 0;font-family:Georgia,serif;font-weight:400;font-size:32px;color:#F5EFE2;">Tu acceso está listo</h1>
         </td></tr>
         <tr><td style="padding:8px 40px 0 40px;text-align:center;">
@@ -72,31 +86,12 @@ function buildQrEmailHtml({ guestName, qrCid }) {
       </table>
     </td></tr>
   </table>
-</body>
-</html>`;
-}
-
-async function sendQrEmail({ to, guestName, qrBuffer }) {
-  const tr = getTransporter();
-  if (!tr) {
-    console.warn('[email] SMTP no configurado — omitiendo envío real');
-    return { skipped: true };
-  }
-  const cid = `qr-${Date.now()}@socialhub`;
-  const info = await tr.sendMail({
-    from: process.env.SMTP_FROM || 'SocialHub Medellín <no-reply@socialhubmedellin.com>',
-    to,
-    subject: 'SocialHub Medellín — Tu QR de acceso',
-    html: buildQrEmailHtml({ guestName, qrCid: cid }),
-    attachments: [{ filename: 'qr.png', content: qrBuffer, cid }],
-  });
-  return { messageId: info.messageId };
+</body></html>`;
 }
 
 function buildWelcomeEmailHtml({ distributorCode, password, roleLabel, rank, loginUrl }) {
   return `<!DOCTYPE html>
-<html lang="es">
-<head><meta charset="UTF-8"><title>SHM — Acceso a la plataforma</title></head>
+<html lang="es"><head><meta charset="UTF-8"><title>SHM — Acceso a la plataforma</title></head>
 <body style="margin:0;padding:0;background:#0B1B2B;font-family:Georgia,'Cormorant Garamond',serif;color:#F5EFE2;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#0B1B2B;padding:40px 0;">
     <tr><td align="center">
@@ -134,26 +129,7 @@ function buildWelcomeEmailHtml({ distributorCode, password, roleLabel, rank, log
       </table>
     </td></tr>
   </table>
-</body>
-</html>`;
-}
-
-async function sendWelcomeEmail({ to, distributorCode, password, roleLabel, rank }) {
-  const tr = getTransporter();
-  const loginUrl = process.env.PUBLIC_BASE_URL
-    ? `${process.env.PUBLIC_BASE_URL}/dashboard/`
-    : 'http://localhost:4000/dashboard/';
-  if (!tr) {
-    console.warn(`[email] SMTP no configurado — credenciales para ${distributorCode}: pwd="${password}" (no se envió email)`);
-    return { skipped: true, login_url: loginUrl };
-  }
-  const info = await tr.sendMail({
-    from: process.env.SMTP_FROM || 'SHM <no-reply@socialhubmedellin.com>',
-    to,
-    subject: 'SHM — Tu acceso a la plataforma',
-    html: buildWelcomeEmailHtml({ distributorCode, password, roleLabel, rank, loginUrl }),
-  });
-  return { messageId: info.messageId, login_url: loginUrl };
+</body></html>`;
 }
 
 function buildResetLinkEmailHtml({ resetUrl, name }) {
@@ -178,21 +154,6 @@ function buildResetLinkEmailHtml({ resetUrl, name }) {
     </td></tr>
   </table>
 </body></html>`;
-}
-
-async function sendPasswordResetEmail({ to, resetUrl, name }) {
-  const tr = getTransporter();
-  if (!tr) {
-    console.warn(`[email] SMTP no configurado — reset link para ${to}: ${resetUrl}`);
-    return { skipped: true };
-  }
-  const info = await tr.sendMail({
-    from: process.env.SMTP_FROM || 'SHM <no-reply@socialhubmedellin.com>',
-    to,
-    subject: 'SHM — Recupera tu contraseña',
-    html: buildResetLinkEmailHtml({ resetUrl, name }),
-  });
-  return { messageId: info.messageId };
 }
 
 function buildAdminResetEmailHtml({ name, distributorCode, password, loginUrl }) {
@@ -226,22 +187,58 @@ function buildAdminResetEmailHtml({ name, distributorCode, password, loginUrl })
 </body></html>`;
 }
 
-async function sendAdminResetEmail({ to, name, distributorCode, password }) {
-  const tr = getTransporter();
+// ─────── Funciones públicas (signatures idénticas) ───────
+
+async function sendQrEmail({ to, guestName, qrBuffer }) {
+  const cid = `qr-${Date.now()}@shm`;
+  return sendViaResend({
+    to,
+    subject: 'SHM — Tu QR de acceso',
+    html: buildQrEmailHtml({ guestName, qrCid: cid }),
+    attachments: [{
+      filename: 'qr.png',
+      content: qrBuffer,
+      content_id: cid,
+    }],
+  });
+}
+
+async function sendWelcomeEmail({ to, distributorCode, password, roleLabel, rank }) {
   const loginUrl = process.env.PUBLIC_BASE_URL
     ? `${process.env.PUBLIC_BASE_URL}/dashboard/`
     : 'http://localhost:4000/dashboard/';
-  if (!tr) {
-    console.warn(`[email] SMTP no configurado — admin reset para ${distributorCode}: ${password}`);
-    return { skipped: true, login_url: loginUrl };
-  }
-  const info = await tr.sendMail({
-    from: process.env.SMTP_FROM || 'SHM <no-reply@socialhubmedellin.com>',
+  const result = await sendViaResend({
+    to,
+    subject: 'SHM — Tu acceso a la plataforma',
+    html: buildWelcomeEmailHtml({ distributorCode, password, roleLabel, rank, loginUrl }),
+  });
+  return { ...result, login_url: loginUrl };
+}
+
+async function sendPasswordResetEmail({ to, resetUrl, name }) {
+  return sendViaResend({
+    to,
+    subject: 'SHM — Recupera tu contraseña',
+    html: buildResetLinkEmailHtml({ resetUrl, name }),
+  });
+}
+
+async function sendAdminResetEmail({ to, name, distributorCode, password }) {
+  const loginUrl = process.env.PUBLIC_BASE_URL
+    ? `${process.env.PUBLIC_BASE_URL}/dashboard/`
+    : 'http://localhost:4000/dashboard/';
+  const result = await sendViaResend({
     to,
     subject: 'SHM — Contraseña restablecida',
     html: buildAdminResetEmailHtml({ name, distributorCode, password, loginUrl }),
   });
-  return { messageId: info.messageId, login_url: loginUrl };
+  return { ...result, login_url: loginUrl };
 }
 
-module.exports = { sendQrEmail, sendWelcomeEmail, sendPasswordResetEmail, sendAdminResetEmail, verifySmtp };
+module.exports = {
+  sendQrEmail,
+  sendWelcomeEmail,
+  sendPasswordResetEmail,
+  sendAdminResetEmail,
+  verifySmtp,
+};
