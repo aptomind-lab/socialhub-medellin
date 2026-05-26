@@ -57,7 +57,7 @@ async function sendViaResend({ to, subject, html, text, attachments }) {
 
 // ─────── Templates HTML ───────
 
-function buildQrEmailHtml({ guestName, qrBase64 }) {
+function buildQrEmailHtml({ guestName }) {
   return `<!DOCTYPE html>
 <html lang="es">
 <head><meta charset="UTF-8"><title>SHM — Tu acceso</title></head>
@@ -72,13 +72,21 @@ function buildQrEmailHtml({ guestName, qrBase64 }) {
         <tr><td style="padding:8px 40px 0 40px;text-align:center;">
           <div style="height:1px;background:linear-gradient(90deg,transparent,#C9A24A,transparent);margin:18px 0;"></div>
           <p style="font-family:'Helvetica Neue',Arial,sans-serif;font-size:15px;line-height:1.7;color:#D6CDB7;margin:0;">
-            ${guestName}, te damos la bienvenida. Presenta el siguiente código QR en la entrada de cada evento para confirmar tu asistencia.
+            ${guestName}, te damos la bienvenida. Presenta tu código QR en la entrada de cada evento para confirmar tu asistencia.
           </p>
         </td></tr>
-        <tr><td align="center" style="padding:30px 40px;">
-          <div style="background:#F5EFE2;padding:18px;border-radius:10px;display:inline-block;">
-            <img src="data:image/png;base64,${qrBase64}" alt="QR de acceso" width="240" height="240" style="display:block;">
-          </div>
+        <tr><td align="center" style="padding:32px 40px;">
+          <table cellpadding="0" cellspacing="0" style="background:#07111C;border:1px solid #C9A24A;border-radius:12px;">
+            <tr><td style="padding:26px 32px;text-align:center;">
+              <div style="font-size:36px;line-height:1;color:#C9A24A;margin-bottom:14px;">▣</div>
+              <div style="font-family:'Helvetica Neue',Arial,sans-serif;font-size:15px;color:#F5EFE2;font-weight:500;letter-spacing:1px;margin-bottom:8px;">
+                Tu código QR está adjunto a este correo
+              </div>
+              <div style="font-family:'Helvetica Neue',Arial,sans-serif;font-size:12px;color:#8FA3B8;line-height:1.6;">
+                Abre el archivo <strong style="color:#D9B871;">tu-qr-acceso.png</strong> y guárdalo en tu celular. Preséntalo en la entrada del evento.
+              </div>
+            </td></tr>
+          </table>
         </td></tr>
         <tr><td style="padding:0 40px 36px 40px;text-align:center;">
           <p style="font-family:'Helvetica Neue',Arial,sans-serif;font-size:13px;line-height:1.7;color:#8FA3B8;margin:0;">
@@ -195,16 +203,19 @@ function buildAdminResetEmailHtml({ name, distributorCode, password, loginUrl })
 // ─────── Funciones públicas (signatures idénticas) ───────
 
 async function sendQrEmail({ to, guestName, qrBuffer }) {
-  // Resend no soporta CID inline. Embedemos el PNG como base64 en el <img>.
-  // NO usamos attachment: cuando hay attachment de imagen Gmail lo muestra como
-  // "vista de adjunto" y oculta el HTML del email — quedaba solo el QR sin diseño.
+  // Gmail bloquea data: URIs en <img>. Enviamos el QR como adjunto PNG y mencionamos
+  // el archivo en el HTML para que el invitado sepa abrirlo.
   const qrBase64 = Buffer.isBuffer(qrBuffer) ? qrBuffer.toString('base64') : qrBuffer;
-  const html = buildQrEmailHtml({ guestName, qrBase64 });
+  const html = buildQrEmailHtml({ guestName });
   return sendViaResend({
     to,
     subject: 'SHM — Tu QR de acceso',
     html,
-    text: `${guestName}, te damos la bienvenida a SHM.\n\nTu QR de acceso personal viene incrustado en este correo. Si tu cliente no lo muestra, ábrelo en otro navegador o cliente.\n\nConserva este correo — tu QR es personal e intransferible.`,
+    text: `${guestName}, te damos la bienvenida a SHM.\n\nTu código QR de acceso está adjunto a este correo (archivo: tu-qr-acceso.png). Ábrelo, guárdalo en tu celular y preséntalo en la entrada de cada evento.\n\nConserva este correo — tu QR es personal e intransferible.`,
+    attachments: [{
+      filename: 'tu-qr-acceso.png',
+      content: qrBase64,
+    }],
   });
 }
 
