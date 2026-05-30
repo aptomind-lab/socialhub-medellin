@@ -21,7 +21,7 @@ router.get('/', requireAuth, (req, res) => {
   let sql = `
     SELECT u.*, m.number AS module_number, m.name AS module_name,
       pl.full_name AS productive_leader_name,
-      (SELECT MAX(created_at) FROM daily_messages dm WHERE dm.user_id = u.id) AS last_message_at,
+      (SELECT MAX(created_at) FROM daily_activity dm WHERE dm.user_id = u.id) AS last_message_at,
       (SELECT COUNT(*) FROM guests g WHERE g.distributor_id = u.id) AS total_guests
     FROM users u
     LEFT JOIN modules m ON m.id = u.module_id
@@ -147,7 +147,7 @@ router.get('/:id', requireAuth, (req, res) => {
   if (!canActOn(req.user, u)) return res.status(403).json({ error: 'No tienes acceso a este usuario' });
 
   const guests = db.prepare('SELECT * FROM guests WHERE distributor_id = ? ORDER BY created_at DESC').all(u.id);
-  const messages = db.prepare('SELECT date, count FROM daily_messages WHERE user_id = ? ORDER BY date DESC LIMIT 30').all(u.id);
+  const messages = db.prepare('SELECT date, messages AS count, books, tiktok_minutes, tiktok_leads FROM daily_activity WHERE user_id = ? ORDER BY date DESC LIMIT 30').all(u.id);
   res.json({ user: decorate(u), guests, messages });
 });
 

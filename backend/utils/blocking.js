@@ -8,7 +8,7 @@ function hoursSince(dateStr) {
 
 function lastMessageAt(userId) {
   const row = db.prepare(`
-    SELECT MAX(created_at) AS last_at FROM daily_messages WHERE user_id = ?
+    SELECT MAX(created_at) AS last_at FROM daily_activity WHERE user_id = ?
   `).get(userId);
   return row ? row.last_at : null;
 }

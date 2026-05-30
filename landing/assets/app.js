@@ -9,6 +9,38 @@
   const qrDownload = document.getElementById('qr-download');
   document.getElementById('year').textContent = new Date().getFullYear();
 
+  // ── Pre-fill del código si viene en la URL: ?ref=CODIGO ──
+  const accessInput = document.getElementById('access_code');
+  const refParam = new URLSearchParams(location.search).get('ref');
+  if (refParam) {
+    accessInput.value = refParam.toUpperCase();
+    accessInput.readOnly = true;
+    accessInput.setAttribute('aria-readonly', 'true');
+    accessInput.classList.add('locked');
+    // Reemplazamos el hint para indicar que el código vino del invitador
+    const hintEl = accessInput.nextElementSibling;
+    if (hintEl && hintEl.classList.contains('hint')) {
+      hintEl.textContent = 'Código asignado por tu invitador.';
+    }
+  }
+
+  // ── Próximo B.O.M (público) ──
+  const bomCard = document.getElementById('next-bom-card');
+  const bomDateEl = document.getElementById('next-bom-date');
+  const DAYS_ES = { monday: 'Lunes', tuesday: 'Martes', wednesday: 'Miércoles', thursday: 'Jueves', friday: 'Viernes', saturday: 'Sábado', sunday: 'Domingo' };
+  fetch(`${API_BASE}/api/events/next-bom-public`)
+    .then((r) => r.ok ? r.json() : null)
+    .then((bom) => {
+      if (!bom || !bom.date) return;
+      // Formatea: "Martes 27 de mayo"
+      const d = new Date(bom.date + 'T00:00:00');
+      const monthNames = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+      const formatted = `${DAYS_ES[bom.day_of_week] || ''} ${d.getDate()} de ${monthNames[d.getMonth()]}`;
+      bomDateEl.textContent = formatted;
+      bomCard.hidden = false;
+    })
+    .catch(() => { /* silencioso si falla */ });
+
   function showError(msg) {
     errorBox.textContent = msg;
     errorBox.hidden = false;

@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS users (
   role                  TEXT    NOT NULL CHECK (role IN ('system_leader','module_leader','productive_leader','distributor')),
   module_id             INTEGER REFERENCES modules(id) ON DELETE SET NULL,
   productive_leader_id  INTEGER REFERENCES users(id) ON DELETE SET NULL,
-  sponsor_id            INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  firmado_por           INTEGER REFERENCES users(id) ON DELETE SET NULL,
   bhip_rank             TEXT    NOT NULL DEFAULT 'Profesional',
   password_must_change  INTEGER NOT NULL DEFAULT 0,
   profile_completed     INTEGER NOT NULL DEFAULT 1,
@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE INDEX IF NOT EXISTS idx_users_role     ON users(role);
 CREATE INDEX IF NOT EXISTS idx_users_module   ON users(module_id);
 CREATE INDEX IF NOT EXISTS idx_users_team     ON users(productive_leader_id);
-CREATE INDEX IF NOT EXISTS idx_users_sponsor  ON users(sponsor_id);
+CREATE INDEX IF NOT EXISTS idx_users_firmado_por ON users(firmado_por);
 CREATE INDEX IF NOT EXISTS idx_users_rank     ON users(bhip_rank);
 CREATE INDEX IF NOT EXISTS idx_users_code     ON users(distributor_code);
 
@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS guests (
   bit_date        TEXT,
   power_talk_date TEXT,
   signed_month    TEXT,
+  bom_assigned_date TEXT,
   created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
   updated_at      TEXT    NOT NULL DEFAULT (datetime('now'))
 );
@@ -69,6 +70,7 @@ CREATE INDEX IF NOT EXISTS idx_guests_token        ON guests(qr_token);
 CREATE INDEX IF NOT EXISTS idx_guests_created      ON guests(created_at);
 CREATE INDEX IF NOT EXISTS idx_guests_color        ON guests(color);
 CREATE INDEX IF NOT EXISTS idx_guests_signed_month ON guests(signed_month);
+CREATE INDEX IF NOT EXISTS idx_guests_bom_date     ON guests(bom_assigned_date);
 
 CREATE TABLE IF NOT EXISTS stage_history (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -107,6 +109,52 @@ CREATE INDEX IF NOT EXISTS idx_pwreset_user  ON password_resets(user_id);
 
 CREATE INDEX IF NOT EXISTS idx_msgs_user ON daily_messages(user_id);
 CREATE INDEX IF NOT EXISTS idx_msgs_date ON daily_messages(date);
+
+-- Actividad diaria unificada (reemplaza daily_messages como fuente activa).
+CREATE TABLE IF NOT EXISTS daily_activity (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  date            TEXT    NOT NULL,
+  messages        INTEGER NOT NULL DEFAULT 0,
+  books           INTEGER NOT NULL DEFAULT 0,
+  tiktok_minutes  INTEGER NOT NULL DEFAULT 0,
+  tiktok_leads    INTEGER NOT NULL DEFAULT 0,
+  created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+  updated_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(user_id, date)
+);
+CREATE INDEX IF NOT EXISTS idx_activity_user ON daily_activity(user_id);
+CREATE INDEX IF NOT EXISTS idx_activity_date ON daily_activity(date);
+
+-- Gamificación
+CREATE TABLE IF NOT EXISTS streaks (
+  user_id          INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  current_streak   INTEGER NOT NULL DEFAULT 0,
+  longest_streak   INTEGER NOT NULL DEFAULT 0,
+  last_active_date TEXT,
+  updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS achievements (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id          INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  achievement_key  TEXT    NOT NULL,
+  unlocked_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(user_id, achievement_key)
+);
+CREATE INDEX IF NOT EXISTS idx_achievements_user ON achievements(user_id);
+
+CREATE TABLE IF NOT EXISTS xp_events (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  action_type  TEXT    NOT NULL,
+  xp_earned    INTEGER NOT NULL,
+  ref_type     TEXT,
+  ref_id       INTEGER,
+  created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_xp_user ON xp_events(user_id);
+CREATE INDEX IF NOT EXISTS idx_xp_date ON xp_events(created_at);
 
 -- Eventos del calendario semanal con recurrencia
 -- recurrence_type: 'weekly' (se repite los días en recurrence_days) | 'one_time'

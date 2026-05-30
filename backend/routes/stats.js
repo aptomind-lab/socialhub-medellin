@@ -45,8 +45,8 @@ router.get('/kpis', requireAuth, (req, res) => {
 
   // Total mensajes (mes)
   const totalMessages = db.prepare(`
-    SELECT IFNULL(SUM(dm.count), 0) AS total
-    FROM daily_messages dm
+    SELECT IFNULL(SUM(dm.messages), 0) AS total
+    FROM daily_activity dm
     JOIN users u ON u.id = dm.user_id
     WHERE dm.date BETWEEN ? AND ?
     ${scope.sql} ${moduleFilter.sql}
@@ -153,7 +153,26 @@ router.get('/funnel', requireAuth, (req, res) => {
     return { stage: s, label: STAGE_LABELS[s], count, conversion_from_previous_pct: conversion_pct };
   });
 
-  res.json({ range: { from, to }, funnel });
+  // INPUTS: mensajes y TikTok leads → books (Book = REGISTRO en el embudo).
+  // Books generados por los usuarios visibles en el rango.
+  const booksRow = db.prepare(`
+    SELECT IFNULL(SUM(a.messages), 0) AS m, IFNULL(SUM(a.tiktok_leads), 0) AS t,
+           IFNULL(SUM(a.books), 0) AS b
+    FROM daily_activity a
+    JOIN users u ON u.id = a.user_id
+    WHERE a.date BETWEEN ? AND ? ${scope.sql} ${extraSql}
+  `).get(from, to, ...scope.params, ...extraParams);
+
+  const inputMessages   = booksRow.m;
+  const inputTiktokLeads = booksRow.t;
+  const totalBooks      = booksRow.b;
+  const inputs = {
+    messages:     { count: inputMessages,    to_books_pct: inputMessages   > 0 ? Math.round((totalBooks / inputMessages)   * 1000) / 10 : 0 },
+    tiktok_leads: { count: inputTiktokLeads, to_books_pct: inputTiktokLeads > 0 ? Math.round((totalBooks / inputTiktokLeads) * 1000) / 10 : 0 },
+    books_total:  totalBooks,
+  };
+
+  res.json({ range: { from, to }, inputs, funnel });
 });
 
 // ================= COMPARACIÓN POR MÓDULO (solo system_leader) =================
@@ -184,7 +203,7 @@ router.get('/by-module', requireAuth, (req, res) => {
         AND date(h.scanned_at) BETWEEN ? AND ?
     `).get(m.id, from, to).c;
     const messages = db.prepare(`
-      SELECT IFNULL(SUM(dm.count), 0) AS t FROM daily_messages dm
+      SELECT IFNULL(SUM(dm.messages), 0) AS t FROM daily_activity dm
       JOIN users u ON u.id = dm.user_id
       WHERE u.module_id = ? AND dm.date BETWEEN ? AND ?
     `).get(m.id, from, to).t;
@@ -251,7 +270,7 @@ router.get('/comparison', requireAuth, (req, res) => {
       ${scope.sql} ${moduleFilter.sql}
     `).get(from, to, ...scope.params, ...moduleFilter.params).c;
     const messages = db.prepare(`
-      SELECT IFNULL(SUM(dm.count),0) AS t FROM daily_messages dm
+      SELECT IFNULL(SUM(dm.messages),0) AS t FROM daily_activity dm
       JOIN users u ON u.id = dm.user_id
       WHERE dm.date BETWEEN ? AND ?
       ${scope.sql} ${moduleFilter.sql}
@@ -293,7 +312,7 @@ router.get('/team', requireAuth, (req, res) => {
   // Mesa = distribuidores con productive_leader_id = pl.id
   const team = db.prepare(`
     SELECT u.id, u.full_name, u.distributor_code, u.blocked,
-      IFNULL((SELECT SUM(dm.count) FROM daily_messages dm WHERE dm.user_id = u.id AND dm.date BETWEEN ? AND ?), 0) AS messages_week,
+      IFNULL((SELECT SUM(dm.messages) FROM daily_activity dm WHERE dm.user_id = u.id AND dm.date BETWEEN ? AND ?), 0) AS messages_week,
       IFNULL((SELECT COUNT(*) FROM guests g WHERE g.distributor_id = u.id AND date(g.created_at) BETWEEN ? AND ?), 0) AS books_week,
       IFNULL((SELECT COUNT(DISTINCT h.guest_id) FROM stage_history h
               JOIN guests g ON g.id = h.guest_id

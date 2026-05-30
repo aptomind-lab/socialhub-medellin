@@ -175,6 +175,66 @@
     if (v === 'profile')    loadProfile();
     if (v === 'scanner')    loadScanner();
     if (v !== 'scanner')    stopScanning();
+    if (v === 'logros')     loadLogros();
+  }
+
+  // ============ GAMIFICACIÓN ============
+  async function loadLogros() {
+    try {
+      const [me_, week, month] = await Promise.all([
+        api('/api/gamification/me'),
+        api('/api/gamification/rankings/week'),
+        api('/api/gamification/rankings/month'),
+      ]);
+      $('g-streak').textContent   = me_.streak.current_streak;
+      $('g-longest').textContent  = me_.streak.longest_streak;
+      $('g-xp').textContent       = me_.xp_total;
+      $('g-streak-msg').textContent = streakMessage(me_.streak.current_streak);
+
+      $('g-achievements').innerHTML = me_.achievements.map((a) => `
+        <div class="achievement ${a.unlocked ? 'unlocked' : 'locked'}">
+          <div class="achievement-icon">${a.icon}</div>
+          <div class="achievement-label">${a.label}</div>
+          <div class="achievement-desc">${a.desc}</div>
+          ${a.unlocked ? `<div class="achievement-unlocked-at">Desbloqueado ${String(a.unlocked_at).slice(0, 10)}</div>` : '<div class="achievement-locked-tag">Por desbloquear</div>'}
+        </div>
+      `).join('');
+
+      $('rank-week').innerHTML  = renderRanking(week.rows, me.id);
+      $('rank-month').innerHTML = renderRanking(month.rows, me.id);
+    } catch (err) { handleErr(err); }
+  }
+
+  function streakMessage(n) {
+    if (n === 0) return '¿Cómo estuvo tu día hoy? 💪';
+    if (n === 1) return '¡Buen comienzo!';
+    if (n < 7)   return `Llevas ${n} días — no la rompas 🔥`;
+    if (n < 30)  return `¡${n} días! Estás imparable`;
+    return `${n} días — eres una máquina ⭐`;
+  }
+
+  function renderRanking(rows, meId) {
+    if (!rows || !rows.length) return '<li class="muted">Aún sin actividad — sé el primero 🚀</li>';
+    return rows.slice(0, 5).map((r, i) => {
+      const medal = ['🥇','🥈','🥉'][i] || `${i + 1}.`;
+      const self = r.id === meId ? '<span class="muted" style="font-size:11px;"> (tú)</span>' : '';
+      return `<li>
+        <span class="rank-place">${medal}</span>
+        <span class="rank-name">${r.full_name}${self}</span>
+        <span class="rank-xp">${r.xp} XP</span>
+      </li>`;
+    }).join('');
+  }
+
+  async function refreshStreakBadge() {
+    try {
+      const d = await api('/api/gamification/me');
+      const badge = $('streak-badge');
+      if (badge && d.streak.current_streak > 0) {
+        $('streak-count').textContent = d.streak.current_streak;
+        badge.hidden = false;
+      }
+    } catch (e) { /* silent */ }
   }
 
   function loadProfile() {
@@ -194,6 +254,69 @@
         <span class="profile-value">${v}</span>
       </div>
     `).join('');
+
+    // Mi link de registro
+    const refInput = $('ref-link');
+    if (refInput && me.distributor_code) {
+      const landingBase = 'https://socialhub-medellin.vercel.app/landing/';
+      refInput.value = `${landingBase}?ref=${encodeURIComponent(me.distributor_code)}`;
+    }
+
+    // Calendario de actividad — mes actual por defecto
+    const monthInput = $('cal-month');
+    if (monthInput && !monthInput.value) {
+      const now = new Date();
+      monthInput.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    }
+    loadActivityCalendar();
+  }
+
+  async function loadActivityCalendar() {
+    const month = $('cal-month').value;
+    if (!month) return;
+    try {
+      const d = await api(`/api/activity/calendar?month=${encodeURIComponent(month)}`);
+      $('cal-summary').innerHTML = `
+        <span><strong>${d.totals.active_days}</strong>/${d.days.length} días activos</span>
+        <span style="margin-left:18px;color:var(--muted);">Consistencia: <strong style="color:var(--gold-400);">${d.consistency_pct}%</strong></span>
+        <span style="margin-left:18px;color:var(--muted);">Prom. msgs/día: <strong>${d.averages.messages}</strong></span>
+        <span style="margin-left:14px;color:var(--muted);">Prom. books/día: <strong>${d.averages.books}</strong></span>
+      `;
+      $('cal-grid').innerHTML = d.days.map(renderCalDay).join('');
+    } catch (err) { handleErr(err); }
+  }
+
+  function renderCalDay(d) {
+    const total = d.messages + d.books * 10 + d.tiktok_minutes / 5 + d.tiktok_leads * 8;
+    let cls = 'cal-zero';
+    if (total > 0 && total < 30) cls = 'cal-low';
+    else if (total >= 30 && total < 100) cls = 'cal-mid';
+    else if (total >= 100) cls = 'cal-high';
+    const tooltip = `${d.date} · ${d.messages} msgs · ${d.books} books · ${d.tiktok_minutes}min TT · ${d.tiktok_leads} leads`;
+    return `<div class="cal-day-cell ${cls}" title="${tooltip}"><span class="cal-day-num">${d.day}</span></div>`;
+  }
+
+  document.addEventListener('change', (e) => {
+    if (e.target && e.target.id === 'cal-month') loadActivityCalendar();
+  });
+
+  if ($('copy-ref-link')) {
+    $('copy-ref-link').addEventListener('click', async () => {
+      const fb = $('ref-link-feedback');
+      const link = $('ref-link').value;
+      try {
+        await navigator.clipboard.writeText(link);
+        fb.textContent = '✓ Link copiado al portapapeles';
+        fb.hidden = false;
+      } catch (e) {
+        // Fallback para navegadores viejos / contextos no seguros
+        $('ref-link').select();
+        document.execCommand('copy');
+        fb.textContent = '✓ Link copiado';
+        fb.hidden = false;
+      }
+      setTimeout(() => { fb.hidden = true; }, 2500);
+    });
   }
 
   if ($('pwd-form')) {
@@ -360,7 +483,30 @@
   async function loadFunnel() {
     const data = await api('/api/stats/funnel' + qs(getFilters()));
     const max = Math.max(...data.funnel.map((s) => s.count), 1);
-    $('funnel-list').innerHTML = data.funnel.map((s, i) => {
+
+    // Inputs: mensajes y TikTok leads → books (rama de entrada al embudo).
+    const inp = data.inputs || {};
+    const inputsHtml = inp.messages || inp.tiktok_leads ? `
+      <div class="funnel-inputs">
+        <div class="overline">Entradas al embudo</div>
+        <div class="funnel-inputs-grid">
+          <div class="funnel-input-card">
+            <div class="funnel-input-label">Mensajes enviados</div>
+            <div class="funnel-input-count">${inp.messages?.count ?? 0}</div>
+            <div class="funnel-input-conv">→ <strong>${inp.books_total ?? 0} books</strong></div>
+            <div class="funnel-convo ${(inp.messages?.to_books_pct || 0) >= 5 ? 'good' : (inp.messages?.to_books_pct || 0) >= 1 ? 'mid' : 'low'}">${inp.messages?.to_books_pct ?? 0}%</div>
+          </div>
+          <div class="funnel-input-card tiktok">
+            <div class="funnel-input-label">TikTok leads</div>
+            <div class="funnel-input-count">${inp.tiktok_leads?.count ?? 0}</div>
+            <div class="funnel-input-conv">→ <strong>${inp.books_total ?? 0} books</strong></div>
+            <div class="funnel-convo ${(inp.tiktok_leads?.to_books_pct || 0) >= 25 ? 'good' : (inp.tiktok_leads?.to_books_pct || 0) >= 10 ? 'mid' : 'low'}">${inp.tiktok_leads?.to_books_pct ?? 0}%</div>
+          </div>
+        </div>
+      </div>
+    ` : '';
+
+    const funnelHtml = data.funnel.map((s) => {
       const convo = s.conversion_from_previous_pct;
       const convoHtml = convo == null ? ''
         : `<div class="funnel-convo ${convo >= 50 ? 'good' : convo >= 25 ? 'mid' : 'low'}" title="Conversión desde la etapa anterior">${convo}%</div>`;
@@ -373,6 +519,8 @@
         </div>
       `;
     }).join('');
+
+    $('funnel-list').innerHTML = inputsHtml + funnelHtml;
   }
 
   // ============ TEAM (vista detallada por rol) ============
@@ -931,13 +1079,15 @@
             <td>${r.module_number ? `M${r.module_number}` : '—'}</td>
             <td><strong>${r.total_messages}</strong></td>
             <td><strong style="color:var(--teal-400);">${r.total_books || 0}</strong></td>
+            <td>${r.total_tiktok_minutes || 0}</td>
+            <td><strong style="color:#FF6B95;">${r.total_tiktok_leads || 0}</strong></td>
             <td>${r.days_logged}</td>
           </tr>
         `).join('')
-      : '<tr><td colspan="6" class="muted">Sin registros aún.</td></tr>';
+      : '<tr><td colspan="8" class="muted">Sin registros aún.</td></tr>';
   }
 
-  // Pre-llena el form con el registro existente del usuario+fecha seleccionados (UX para edición).
+  // Pre-llena AMBOS forms (mensajes + tiktok) con el registro existente del usuario+fecha.
   async function prefillMessageForm() {
     const uid = parseInt($('msg-user').value, 10);
     const date = $('msg-date').value;
@@ -946,7 +1096,9 @@
       const r = await api(`/api/messages/user/${uid}`);
       const found = (r.messages || []).find((m) => m.date === date);
       $('msg-count').value = found ? found.count : '';
-      $('msg-books').value = found ? (found.books_count || 0) : 0;
+      $('msg-books').value = found ? (found.books || found.books_count || 0) : 0;
+      if ($('tt-minutes')) $('tt-minutes').value = found ? (found.tiktok_minutes || 0) : 0;
+      if ($('tt-leads'))   $('tt-leads').value   = found ? (found.tiktok_leads   || 0) : 0;
     } catch (e) { /* silent */ }
   }
   document.addEventListener('change', (e) => {
@@ -961,14 +1113,34 @@
         body: JSON.stringify({
           user_id: parseInt($('msg-user').value, 10),
           date: $('msg-date').value,
-          count: parseInt($('msg-count').value, 10) || 0,
-          books_count: parseInt($('msg-books').value, 10) || 0,
+          messages: parseInt($('msg-count').value, 10) || 0,
+          books: parseInt($('msg-books').value, 10) || 0,
         }),
       });
       loadMessages();
       refreshDailySummary();
     } catch (err) { alert(err.message); }
   });
+
+  // Form TikTok Live — actualiza solo los campos tiktok_*, preserva mensajes/books.
+  if ($('tiktok-form')) {
+    $('tiktok-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        await api('/api/messages', {
+          method: 'POST',
+          body: JSON.stringify({
+            user_id: parseInt($('msg-user').value, 10),
+            date: $('msg-date').value,
+            tiktok_minutes: parseInt($('tt-minutes').value, 10) || 0,
+            tiktok_leads:   parseInt($('tt-leads').value, 10) || 0,
+          }),
+        });
+        loadMessages();
+        refreshDailySummary();
+      } catch (err) { alert(err.message); }
+    });
+  }
 
   // ============ EVENTS ============
   async function loadEvents() {
@@ -1427,6 +1599,7 @@
       loadOverview();
       refreshAlertBadge();
       refreshDailySummary();
+      refreshStreakBadge();
       // Auto-refresh del badge cada 60s
       if (window._shBadgeTimer) clearInterval(window._shBadgeTimer);
       window._shBadgeTimer = setInterval(refreshAlertBadge, 60 * 1000);
@@ -1484,7 +1657,7 @@
       if (r.record) {
         $('daily-log-summary').textContent = `Hoy: ${r.record.count} msgs · ${r.record.books_count} books`;
       } else {
-        $('daily-log-summary').textContent = 'Registrar hoy ⚠';
+        $('daily-log-summary').textContent = '¿Cómo estuvo tu día? Registra 💪';
       }
     } catch (e) { /* silent */ }
   }

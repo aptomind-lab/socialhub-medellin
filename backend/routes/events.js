@@ -2,9 +2,10 @@ const express = require('express');
 const db = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { STAGES, SCANNABLE_STAGES, nextStageAfterScan, STAGE_LABELS } = require('../utils/stages');
-const { eventHappensToday, dayOfWeekLabel, DAYS_ES, getISOWeek, dayOfWeekKey } = require('../utils/calendar');
+const { eventHappensToday, dayOfWeekLabel, DAYS_ES, DAYS, getISOWeek, dayOfWeekKey, nextOccurrenceForWeeklyEvent } = require('../utils/calendar');
 const wg = require('../utils/wg');
 const colors = require('../utils/colors');
+const gam = require('../utils/gamification');
 
 const router = express.Router();
 
@@ -133,6 +134,12 @@ router.post('/scan', requireAuth, (req, res) => {
     if (res && res.changed) colorInfo = res;
   } catch (e) { console.error('[scan/color]', e.message); }
 
+  // Gamificación: XP al contactador del guest (distributor_id) cuando hay avance real.
+  try {
+    if (advanced && newStage === 'BOM') gam.onShowScanned(guest.distributor_id, guest.id);
+    if (advanced && newStage === 'BIT') gam.onBitScanned(guest.distributor_id, guest.id);
+  } catch (e) { console.error('[scan/gamification]', e.message); }
+
   const updated = db.prepare('SELECT * FROM guests WHERE id = ?').get(guest.id);
   res.json({
     ok: true, advanced,
@@ -152,6 +159,30 @@ router.get('/scan/today-count', requireAuth, (req, res) => {
     WHERE scanned_by = ? AND date(scanned_at) = ?
   `).get(req.user.id, today);
   res.json({ count: row.c });
+});
+
+// Próximo B.O.M activo (público — lo consume el landing para mostrar al invitado).
+// El landing está fuera del flujo autenticado, así que NO usamos requireAuth aquí.
+// Para que sea verdaderamente público hay que registrarlo en server.js antes del gate.
+router.get('/next-bom-public', (req, res) => {
+  const ev = db.prepare(`
+    SELECT recurrence_days FROM events
+     WHERE stage_target = 'BOM' AND active = 1 AND recurrence_type = 'weekly'
+     LIMIT 1
+  `).get();
+  if (!ev || !ev.recurrence_days) {
+    return res.status(404).json({ error: 'Sin B.O.M activo' });
+  }
+  const date = nextOccurrenceForWeeklyEvent(ev.recurrence_days, new Date());
+  if (!date) return res.status(404).json({ error: 'Sin próxima ocurrencia' });
+  const d = new Date(date + 'T00:00:00Z');
+  const dayKey = DAYS[d.getUTCDay()];
+  res.json({
+    date,
+    day_of_week: dayKey,
+    day_label: DAYS_ES[dayKey],
+    iso: date,
+  });
 });
 
 module.exports = router;

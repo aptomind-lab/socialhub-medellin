@@ -8,6 +8,8 @@ const { generateQrDataUrl, generateQrBuffer } = require('../utils/qrcode');
 const { sendQrEmail } = require('../utils/email');
 const colors = require('../utils/colors');
 const { nextDistributorCode } = require('../utils/usercode');
+const { nextOccurrenceForWeeklyEvent } = require('../utils/calendar');
+const gam = require('../utils/gamification');
 const bcrypt = require('bcryptjs');
 
 const router = express.Router();
@@ -45,11 +47,21 @@ router.post('/register', registerLimiter, async (req, res) => {
     });
   }
 
+  // Próximo B.O.M activo — se asigna automáticamente al invitado.
+  let bomDate = null;
+  try {
+    const bomEv = db.prepare(`
+      SELECT recurrence_days FROM events
+       WHERE stage_target = 'BOM' AND active = 1 AND recurrence_type = 'weekly' LIMIT 1
+    `).get();
+    if (bomEv && bomEv.recurrence_days) bomDate = nextOccurrenceForWeeklyEvent(bomEv.recurrence_days);
+  } catch (e) { /* sin BOM configurado, OK */ }
+
   const token = tokenGen();
   const info = db.prepare(`
-    INSERT INTO guests (full_name, email, phone, distributor_id, qr_token, current_stage)
-    VALUES (?, ?, ?, ?, ?, 'REGISTRO')
-  `).run(full_name.trim(), email.toLowerCase().trim(), phone.trim(), contactor.id, token);
+    INSERT INTO guests (full_name, email, phone, distributor_id, qr_token, current_stage, bom_assigned_date)
+    VALUES (?, ?, ?, ?, ?, 'REGISTRO', ?)
+  `).run(full_name.trim(), email.toLowerCase().trim(), phone.trim(), contactor.id, token, bomDate);
 
   db.prepare(`
     INSERT INTO stage_history (guest_id, from_stage, to_stage, notes)
@@ -258,7 +270,7 @@ router.post('/:id/sign', requireAuth, (req, res) => {
     const code = nextDistributorCode(moduleRow.number);
     const info = db.prepare(`
       INSERT INTO users (full_name, email, phone, distributor_code, password_hash,
-                         role, module_id, productive_leader_id, sponsor_id)
+                         role, module_id, productive_leader_id, firmado_por)
       VALUES (?, ?, ?, ?, ?, 'distributor', ?, ?, ?)
     `).run(
       guest.full_name, guest.email, guest.phone, code, hash,
@@ -281,13 +293,14 @@ router.post('/:id/sign', requireAuth, (req, res) => {
 
   const { newUserId, code } = tx();
   try { colors.refreshColor(guest.id); } catch (e) { /* no critical */ }
+  try { gam.onFirmado(guest.contactor_id, guest.id); } catch (e) { console.error('[sign/gamification]', e.message); }
 
   const newUser = db.prepare(`
-    SELECT u.*, pl.full_name AS productive_leader_name, sp.full_name AS sponsor_name,
+    SELECT u.*, pl.full_name AS productive_leader_name, sp.full_name AS firmado_por_name,
            m.number AS module_number
     FROM users u
     LEFT JOIN users pl ON pl.id = u.productive_leader_id
-    LEFT JOIN users sp ON sp.id = u.sponsor_id
+    LEFT JOIN users sp ON sp.id = u.firmado_por
     LEFT JOIN modules m ON m.id = u.module_id
     WHERE u.id = ?
   `).get(newUserId);

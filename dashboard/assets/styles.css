@@ -257,6 +257,31 @@ button.primary:hover { transform: translateY(-1px); }
   border-radius: 0 8px 8px 0;
 }
 
+/* Inputs del embudo: mensajes + TikTok → books */
+.funnel-inputs {
+  margin-bottom: 22px; padding-bottom: 18px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.funnel-inputs .overline { margin-bottom: 10px; }
+.funnel-inputs-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+}
+.funnel-input-card {
+  background: rgba(7, 17, 28, 0.5); border: 1px solid var(--line-soft);
+  border-radius: 10px; padding: 14px 16px;
+  display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 10px;
+  align-items: center;
+}
+.funnel-input-card.tiktok { border-color: rgba(255, 0, 80, 0.25); background: rgba(255, 0, 80, 0.04); }
+.funnel-input-label { font-size: 11px; letter-spacing: 1px; color: var(--muted); text-transform: uppercase; }
+.funnel-input-count { font-family: var(--serif); font-size: 22px; color: var(--gold-400); font-weight: 500; }
+.funnel-input-conv  { font-size: 12px; color: var(--ivory-soft); }
+.funnel-input-conv strong { color: var(--teal-400); }
+@media (max-width: 760px) {
+  .funnel-inputs-grid { grid-template-columns: 1fr; }
+  .funnel-input-card { grid-template-columns: 1fr 1fr; row-gap: 6px; }
+}
+
 .funnel-row { display: grid; grid-template-columns: 180px 1fr 70px 70px; gap: 14px; align-items: center; margin-bottom: 12px; }
 .funnel-label { font-size: 14px; }
 .funnel-bar { height: 26px; background: rgba(7, 17, 28, 0.7); border-radius: 6px; overflow: hidden; }
@@ -513,6 +538,131 @@ button.primary:hover { transform: translateY(-1px); }
     var(--navy-900);
   display: flex; align-items: center; justify-content: center;
   padding: 30px; min-height: 100vh;
+}
+
+/* ==== GAMIFICACIÓN ==== */
+.streak-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 6px 12px; border-radius: 100px;
+  background: linear-gradient(180deg, rgba(255,123,61,0.20), rgba(255,123,61,0.10));
+  border: 1px solid rgba(255,123,61,0.5);
+  font-weight: 600; font-size: 14px; color: #FFB07A;
+  animation: streak-pulse 2.5s ease-in-out infinite;
+}
+.streak-icon { font-size: 16px; }
+@keyframes streak-pulse {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.05); }
+}
+
+.achievement-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 14px;
+}
+.achievement {
+  padding: 18px 16px; border-radius: 12px; text-align: center;
+  background: rgba(7,17,28,0.5); border: 1px solid var(--line-soft);
+  transition: transform 0.2s ease;
+}
+.achievement.unlocked {
+  background: linear-gradient(180deg, rgba(201,162,74,0.18), rgba(46,139,139,0.08));
+  border-color: rgba(201,162,74,0.5);
+  box-shadow: 0 4px 14px rgba(201,162,74,0.15);
+}
+.achievement.unlocked:hover { transform: translateY(-2px); }
+.achievement.locked { opacity: 0.55; }
+.achievement-icon { font-size: 38px; line-height: 1; margin-bottom: 10px; }
+.achievement.locked .achievement-icon { filter: grayscale(1); }
+.achievement-label {
+  font-family: var(--serif); font-weight: 500; font-size: 16px;
+  color: var(--ivory); margin-bottom: 4px;
+}
+.achievement-desc { font-size: 12px; color: var(--muted); line-height: 1.5; margin-bottom: 10px; }
+.achievement-unlocked-at {
+  font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase;
+  color: var(--gold-400);
+}
+.achievement-locked-tag {
+  font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase;
+  color: var(--muted);
+}
+
+.rank-list {
+  list-style: none; padding: 0; margin: 0;
+}
+.rank-list li {
+  display: grid; grid-template-columns: 36px 1fr auto;
+  align-items: center; gap: 10px;
+  padding: 10px 0; border-bottom: 1px solid var(--line-soft);
+  font-size: 14px;
+}
+.rank-list li:last-child { border-bottom: none; }
+.rank-place { font-size: 20px; text-align: center; }
+.rank-name { color: var(--ivory-soft); }
+.rank-xp {
+  font-family: var(--serif); font-size: 18px;
+  color: var(--gold-400); font-weight: 500;
+}
+
+/* ==== CALENDARIO DE ACTIVIDAD (heatmap) ==== */
+.cal-summary {
+  font-size: 13px; color: var(--ivory-soft);
+  padding: 12px 0 18px; border-bottom: 1px solid var(--line-soft); margin-bottom: 18px;
+  display: flex; flex-wrap: wrap; gap: 6px;
+}
+.cal-summary strong { color: var(--ivory); }
+.cal-grid {
+  display: grid; grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+}
+.cal-day-cell {
+  aspect-ratio: 1 / 1;
+  border-radius: 6px;
+  display: flex; align-items: flex-start; justify-content: flex-start;
+  padding: 4px 6px;
+  font-size: 10px; color: var(--ivory-soft);
+  border: 1px solid var(--line-soft);
+  transition: transform 0.15s ease;
+  cursor: default;
+}
+.cal-day-cell:hover { transform: scale(1.06); }
+.cal-day-num { opacity: 0.7; font-weight: 500; }
+.cal-zero { background: rgba(7, 17, 28, 0.5); }
+.cal-low  { background: rgba(46, 139, 139, 0.18);  border-color: rgba(70, 176, 168, 0.30); }
+.cal-mid  { background: rgba(46, 139, 139, 0.38);  border-color: rgba(70, 176, 168, 0.55); }
+.cal-high { background: rgba(70, 176, 168, 0.72);  border-color: rgba(201, 162, 74, 0.6); color: #0B1B2B; }
+.cal-high .cal-day-num { color: #0B1B2B; opacity: 1; }
+.cal-legend {
+  margin-top: 18px;
+  font-size: 11px; color: var(--muted); letter-spacing: 0.5px;
+  display: flex; align-items: center; flex-wrap: wrap;
+}
+.cal-legend .cal-day-cell {
+  width: 16px; height: 16px; aspect-ratio: auto;
+  margin-right: 6px; padding: 0;
+}
+
+@media (max-width: 640px) {
+  .cal-grid { gap: 4px; }
+  .cal-day-cell { padding: 3px 4px; font-size: 9px; }
+}
+
+/* ==== MI LINK DE REGISTRO ==== */
+.ref-link-row {
+  display: flex; gap: 10px; align-items: stretch;
+}
+.ref-link-row input {
+  flex: 1; min-width: 0;
+  font-family: 'Courier New', monospace;
+  font-size: 13px; letter-spacing: 0.3px;
+  color: var(--gold-400);
+  background: rgba(7, 17, 28, 0.6);
+  cursor: text;
+}
+.ref-link-row button { flex-shrink: 0; }
+@media (max-width: 640px) {
+  .ref-link-row { flex-direction: column; }
+  .ref-link-row button { width: 100%; }
 }
 
 /* ==== PROFILE INFO GRID ==== */

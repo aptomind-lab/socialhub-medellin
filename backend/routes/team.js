@@ -26,13 +26,13 @@ function rangeBounds() {
 function statsForUser(userId, b) {
   const r = db.prepare(`
     SELECT
-      (SELECT IFNULL(SUM(count),0)       FROM daily_messages WHERE user_id=? AND date=?)              AS messages_today,
-      (SELECT IFNULL(SUM(count),0)       FROM daily_messages WHERE user_id=? AND date>=?)             AS messages_week,
-      (SELECT IFNULL(SUM(count),0)       FROM daily_messages WHERE user_id=? AND date>=?)             AS messages_month,
-      (SELECT IFNULL(SUM(books_count),0) FROM daily_messages WHERE user_id=? AND date=?)              AS books_today,
-      (SELECT IFNULL(SUM(books_count),0) FROM daily_messages WHERE user_id=? AND date>=?)             AS books_week,
-      (SELECT IFNULL(SUM(books_count),0) FROM daily_messages WHERE user_id=? AND date>=?)             AS books_month,
-      (SELECT MAX(created_at) FROM daily_messages WHERE user_id=?)                                    AS last_message_at,
+      (SELECT IFNULL(SUM(messages),0)       FROM daily_activity WHERE user_id=? AND date=?)              AS messages_today,
+      (SELECT IFNULL(SUM(messages),0)       FROM daily_activity WHERE user_id=? AND date>=?)             AS messages_week,
+      (SELECT IFNULL(SUM(messages),0)       FROM daily_activity WHERE user_id=? AND date>=?)             AS messages_month,
+      (SELECT IFNULL(SUM(books),0)          FROM daily_activity WHERE user_id=? AND date=?)              AS books_today,
+      (SELECT IFNULL(SUM(books),0)          FROM daily_activity WHERE user_id=? AND date>=?)             AS books_week,
+      (SELECT IFNULL(SUM(books),0)          FROM daily_activity WHERE user_id=? AND date>=?)             AS books_month,
+      (SELECT MAX(created_at) FROM daily_activity WHERE user_id=?)                                       AS last_message_at,
       (SELECT COUNT(DISTINCT h.guest_id) FROM stage_history h
          JOIN guests g ON g.id=h.guest_id
          WHERE g.distributor_id=? AND h.to_stage='BOM' AND date(h.scanned_at)>=?)                     AS shows_week,
@@ -119,9 +119,9 @@ router.get('/role-breakdown', requireAuth, (req, res) => {
     const rows = modules.map((m) => {
       const r = db.prepare(`
         SELECT
-          (SELECT IFNULL(SUM(dm.count),0) FROM daily_messages dm
+          (SELECT IFNULL(SUM(dm.messages),0) FROM daily_activity dm
              JOIN users u ON u.id=dm.user_id WHERE u.module_id=? AND dm.date>=?) AS messages_month,
-          (SELECT IFNULL(SUM(dm.books_count),0) FROM daily_messages dm
+          (SELECT IFNULL(SUM(dm.books),0) FROM daily_activity dm
              JOIN users u ON u.id=dm.user_id WHERE u.module_id=? AND dm.date>=?) AS books_month,
           (SELECT COUNT(DISTINCT h.guest_id) FROM stage_history h
              JOIN guests g ON g.id=h.guest_id JOIN users u ON u.id=g.distributor_id
@@ -150,7 +150,7 @@ router.get('/role-breakdown', requireAuth, (req, res) => {
       const mesaIds = db.prepare('SELECT id FROM users WHERE productive_leader_id=? OR id=?').all(p.id, p.id).map(r => r.id);
       const placeholders = mesaIds.map(() => '?').join(',');
       const sum = (col, dateCol, from) => db.prepare(`
-        SELECT IFNULL(SUM(${col}),0) AS s FROM daily_messages
+        SELECT IFNULL(SUM(${col}),0) AS s FROM daily_activity
          WHERE user_id IN (${placeholders}) AND ${dateCol}>=?
       `).get(...mesaIds, from).s;
       const countBitWeek = db.prepare(`
@@ -158,10 +158,10 @@ router.get('/role-breakdown', requireAuth, (req, res) => {
         JOIN guests g ON g.id=h.guest_id
         WHERE g.distributor_id IN (${placeholders}) AND h.to_stage='BIT' AND date(h.scanned_at)>=?
       `).get(...mesaIds, b.weekStart).c;
-      const messages_today  = sum('count', 'date', b.today);
-      const messages_week   = sum('count', 'date', b.weekStart);
-      const messages_month  = sum('count', 'date', b.monthStart);
-      const books_month     = sum('books_count', 'date', b.monthStart);
+      const messages_today  = sum('messages', 'date', b.today);
+      const messages_week   = sum('messages', 'date', b.weekStart);
+      const messages_month  = sum('messages', 'date', b.monthStart);
+      const books_month     = sum('books', 'date', b.monthStart);
       const signed_month = db.prepare(`
         SELECT COUNT(*) AS c FROM guests g
         WHERE g.distributor_id IN (${placeholders}) AND g.current_stage='FIRMADO'

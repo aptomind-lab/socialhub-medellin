@@ -59,10 +59,24 @@ function eventHappensToday(event, refDate = new Date()) {
   return event.date === refDate.toISOString().slice(0, 10);
 }
 
+// Próxima ocurrencia (>= refDate) de un evento weekly según su CSV de días.
+// Devuelve fecha ISO 'YYYY-MM-DD' o null si no hay días configurados.
+function nextOccurrenceForWeeklyEvent(recurrenceDaysCsv, refDate = new Date()) {
+  if (!recurrenceDaysCsv) return null;
+  const days = recurrenceDaysCsv.split(',').map((s) => s.trim().toLowerCase());
+  for (let i = 0; i < 14; i++) {
+    const d = new Date(Date.UTC(refDate.getUTCFullYear(), refDate.getUTCMonth(), refDate.getUTCDate() + i));
+    const key = DAYS[d.getUTCDay()];
+    if (days.includes(key)) return d.toISOString().slice(0, 10);
+  }
+  return null;
+}
+
 module.exports = {
   DAYS, DAYS_ES,
   dayOfWeekKey, dayOfWeekLabel,
   getISOWeek, isoWeekToMonday,
   areConsecutiveISOWeeks,
   eventHappensToday,
+  nextOccurrenceForWeeklyEvent,
 };

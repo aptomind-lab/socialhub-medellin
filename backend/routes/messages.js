@@ -1,27 +1,30 @@
-// Registro diario de actividad — mensajes + books.
-// Cualquier usuario puede registrar lo SUYO; los líderes pueden registrar
-// también el de su equipo según su scope.
+// Registro diario unificado (mensajes + books + TikTok Live).
+// Tabla: daily_activity con UPSERT por (user_id, date).
+// Endpoint mantiene compatibilidad: si solo llegan `count` y `books_count` (Tipo A),
+// se preservan los campos TikTok existentes para esa fecha.
 const express = require('express');
 const db = require('../db');
 const { requireAuth, scopeUsersClause } = require('../middleware/auth');
 const { refreshUserBlock } = require('../utils/blocking');
+const gam = require('../utils/gamification');
 
 const router = express.Router();
 
+function clampInt(v, def = 0) {
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) && n >= 0 ? n : def;
+}
+
+// Acepta tanto los nombres nuevos (messages, books, tiktok_minutes, tiktok_leads)
+// como los nombres viejos (count, books_count) para retro-compat.
 router.post('/', requireAuth, (req, res) => {
-  let { user_id, date, count, books_count } = req.body || {};
-  // Si no se especifica user_id, se asume el propio usuario.
+  let { user_id, date, count, books_count, messages, books, tiktok_minutes, tiktok_leads } = req.body || {};
   if (!user_id) user_id = req.user.id;
-  if (!date || count === undefined) {
-    return res.status(400).json({ error: 'date y count son requeridos' });
-  }
-  if (count < 0) return res.status(400).json({ error: 'count debe ser positivo' });
-  const books = Math.max(0, parseInt(books_count || 0, 10) || 0);
+  if (!date) return res.status(400).json({ error: 'date es requerido' });
 
   const target = db.prepare('SELECT * FROM users WHERE id = ?').get(user_id);
   if (!target) return res.status(404).json({ error: 'Usuario no encontrado' });
 
-  // Permisos: el propio usuario siempre puede; superiores en jerarquía también.
   const allowed =
     target.id === req.user.id ||
     req.user.role === 'system_leader' ||
@@ -29,33 +32,71 @@ router.post('/', requireAuth, (req, res) => {
     (req.user.role === 'productive_leader' && target.productive_leader_id === req.user.id);
   if (!allowed) return res.status(403).json({ error: 'No puedes registrar para este usuario' });
 
+  // Carga la fila existente para preservar campos no enviados.
+  const existing = db.prepare(`
+    SELECT messages, books, tiktok_minutes, tiktok_leads FROM daily_activity
+    WHERE user_id = ? AND date = ?
+  `).get(user_id, date) || { messages: 0, books: 0, tiktok_minutes: 0, tiktok_leads: 0 };
+
+  // Resuelve valores finales: nuevo > viejo > existente.
+  const fMessages       = messages       !== undefined ? clampInt(messages, 0)
+                        : count          !== undefined ? clampInt(count, 0)
+                        : existing.messages;
+  const fBooks          = books          !== undefined ? clampInt(books, 0)
+                        : books_count    !== undefined ? clampInt(books_count, 0)
+                        : existing.books;
+  const fTiktokMinutes  = tiktok_minutes !== undefined ? clampInt(tiktok_minutes, 0) : existing.tiktok_minutes;
+  const fTiktokLeads    = tiktok_leads   !== undefined ? clampInt(tiktok_leads, 0)   : existing.tiktok_leads;
+
   db.prepare(`
-    INSERT INTO daily_messages (user_id, date, count, books_count) VALUES (?, ?, ?, ?)
+    INSERT INTO daily_activity (user_id, date, messages, books, tiktok_minutes, tiktok_leads)
+    VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(user_id, date) DO UPDATE SET
-      count = excluded.count,
-      books_count = excluded.books_count,
-      created_at = datetime('now')
-  `).run(user_id, date, count, books);
+      messages       = excluded.messages,
+      books          = excluded.books,
+      tiktok_minutes = excluded.tiktok_minutes,
+      tiktok_leads   = excluded.tiktok_leads,
+      updated_at     = datetime('now')
+  `).run(user_id, date, fMessages, fBooks, fTiktokMinutes, fTiktokLeads);
+
   const status = refreshUserBlock(user_id);
-  res.json({ ok: true, status });
+
+  // Gamificación: actualiza racha, XP y revisa logros (no bloqueante en errores).
+  let gamResult = null;
+  try {
+    gamResult = gam.onActivityRegistered(
+      user_id, date,
+      existing,
+      { messages: fMessages, books: fBooks, tiktok_minutes: fTiktokMinutes, tiktok_leads: fTiktokLeads }
+    );
+  } catch (e) { console.error('[messages/gamification]', e.message); }
+
+  res.json({ ok: true, status, gamification: gamResult });
 });
 
-// Registro de hoy del usuario autenticado (UX para el widget).
+// Hoy del usuario autenticado (UX para el widget topbar y forms).
 router.get('/today', requireAuth, (req, res) => {
   const today = new Date().toISOString().slice(0, 10);
   const row = db.prepare(`
-    SELECT date, count, books_count, created_at FROM daily_messages
-    WHERE user_id = ? AND date = ?
+    SELECT date, messages, books, tiktok_minutes, tiktok_leads, created_at, updated_at
+    FROM daily_activity WHERE user_id = ? AND date = ?
   `).get(req.user.id, today);
-  res.json({ date: today, record: row || null });
+  // Mantenemos compat con clientes que esperan count/books_count.
+  let compat = null;
+  if (row) {
+    compat = { ...row, count: row.messages, books_count: row.books };
+  }
+  res.json({ date: today, record: compat });
 });
 
 router.get('/user/:userId', requireAuth, (req, res) => {
   const rows = db.prepare(`
-    SELECT date, count, books_count, created_at FROM daily_messages
-    WHERE user_id = ? ORDER BY date DESC LIMIT 90
+    SELECT date, messages, books, tiktok_minutes, tiktok_leads, created_at
+    FROM daily_activity WHERE user_id = ? ORDER BY date DESC LIMIT 90
   `).all(req.params.userId);
-  res.json({ messages: rows });
+  // Compat: emitir también count/books_count.
+  const messages = rows.map((r) => ({ ...r, count: r.messages, books_count: r.books }));
+  res.json({ messages });
 });
 
 router.get('/totals', requireAuth, (req, res) => {
@@ -64,14 +105,16 @@ router.get('/totals', requireAuth, (req, res) => {
   let sql = `
     SELECT u.id AS user_id, u.full_name, u.role, u.distributor_code,
            m.number AS module_number,
-           IFNULL(SUM(dm.count), 0) AS total_messages,
-           IFNULL(SUM(dm.books_count), 0) AS total_books,
-           COUNT(dm.id) AS days_logged
+           IFNULL(SUM(a.messages), 0)       AS total_messages,
+           IFNULL(SUM(a.books), 0)          AS total_books,
+           IFNULL(SUM(a.tiktok_minutes), 0) AS total_tiktok_minutes,
+           IFNULL(SUM(a.tiktok_leads), 0)   AS total_tiktok_leads,
+           COUNT(a.id) AS days_logged
     FROM users u
     LEFT JOIN modules m ON m.id = u.module_id
-    LEFT JOIN daily_messages dm ON dm.user_id = u.id
-      ${from ? "AND dm.date >= ?" : ''}
-      ${to ? "AND dm.date <= ?" : ''}
+    LEFT JOIN daily_activity a ON a.user_id = u.id
+      ${from ? "AND a.date >= ?" : ''}
+      ${to ? "AND a.date <= ?" : ''}
     WHERE u.active = 1
     ${scope.sql}
   `;

@@ -55,8 +55,29 @@ function signToken(user) {
   );
 }
 
+// Downline recursivo: TODOS los usuarios que están debajo del actor en la cadena
+// (vía firmado_por O productive_leader_id), incluyendo al propio actor.
+// Usado para PL y distributor — cumple regla: "ves a todos los que están debajo de ti".
+function downlineUserIds(actorId) {
+  const visited = new Set([actorId]);
+  const queue = [actorId];
+  const stmt = db.prepare(
+    'SELECT id FROM users WHERE firmado_por = ? OR productive_leader_id = ?'
+  );
+  while (queue.length) {
+    const current = queue.shift();
+    const children = stmt.all(current, current);
+    for (const c of children) {
+      if (!visited.has(c.id)) {
+        visited.add(c.id);
+        queue.push(c.id);
+      }
+    }
+  }
+  return Array.from(visited);
+}
+
 // Devuelve un objeto con los IDs de usuarios visibles para el actor según jerarquía.
-// Útil para queries: WHERE user_id IN (visibleUserIds)
 function visibleUserIds(actor) {
   if (actor.role === 'system_leader') {
     return db.prepare('SELECT id FROM users').all().map((r) => r.id);
@@ -65,12 +86,8 @@ function visibleUserIds(actor) {
     return db.prepare('SELECT id FROM users WHERE module_id = ? OR id = ?')
       .all(actor.module_id, actor.id).map((r) => r.id);
   }
-  if (actor.role === 'productive_leader') {
-    return db.prepare('SELECT id FROM users WHERE productive_leader_id = ? OR id = ?')
-      .all(actor.id, actor.id).map((r) => r.id);
-  }
-  // distributor
-  return [actor.id];
+  // PL y distributor: downline recursivo (incluye al actor).
+  return downlineUserIds(actor.id);
 }
 
 // Devuelve { sql, params } con la cláusula WHERE adicional para limitar a usuarios visibles.
@@ -79,10 +96,11 @@ function scopeUsersClause(actor, alias = 'u') {
   if (actor.role === 'module_leader') {
     return { sql: `AND (${alias}.module_id = ? OR ${alias}.id = ?)`, params: [actor.module_id, actor.id] };
   }
-  if (actor.role === 'productive_leader') {
-    return { sql: `AND (${alias}.productive_leader_id = ? OR ${alias}.id = ?)`, params: [actor.id, actor.id] };
-  }
-  return { sql: `AND ${alias}.id = ?`, params: [actor.id] };
+  // PL / distributor → downline. Si un distributor no firmó a nadie, el set
+  // queda en [self] y el comportamiento es idéntico al anterior.
+  const ids = downlineUserIds(actor.id);
+  const placeholders = ids.map(() => '?').join(',');
+  return { sql: `AND ${alias}.id IN (${placeholders})`, params: ids };
 }
 
 // Filtra módulos visibles
@@ -93,4 +111,4 @@ function visibleModuleIds(actor) {
   return actor.module_id ? [actor.module_id] : [];
 }
 
-module.exports = { requireAuth, requireOnboarded, requireRole, signToken, visibleUserIds, scopeUsersClause, visibleModuleIds };
+module.exports = { requireAuth, requireOnboarded, requireRole, signToken, visibleUserIds, downlineUserIds, scopeUsersClause, visibleModuleIds };

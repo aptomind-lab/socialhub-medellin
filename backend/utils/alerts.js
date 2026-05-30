@@ -12,7 +12,7 @@ function noMessagesIn48h(actor) {
   const scope = scopeUsersClause(actor, 'u');
   const sql = `
     SELECT u.id, u.full_name, u.distributor_code,
-           (SELECT MAX(created_at) FROM daily_messages dm WHERE dm.user_id = u.id) AS last_message_at,
+           (SELECT MAX(created_at) FROM daily_activity dm WHERE dm.user_id = u.id) AS last_message_at,
            u.module_id
     FROM users u
     WHERE u.role = 'distributor' AND u.active = 1
@@ -26,8 +26,8 @@ function noMessagesIn48h(actor) {
       type: 'no_messages_48h',
       severity: 'warning',
       message: r.last_message_at
-        ? `${r.full_name} (${r.distributor_code}) no actualiza mensajes hace ${Math.floor((Date.now() - new Date(r.last_message_at + 'Z').getTime()) / 3600000)}h`
-        : `${r.full_name} (${r.distributor_code}) nunca ha registrado mensajes`,
+        ? `${r.full_name} (${r.distributor_code}) — ¿cómo le fue hoy? Última actividad hace ${Math.floor((Date.now() - new Date(r.last_message_at + 'Z').getTime()) / 3600000)}h 💪`
+        : `${r.full_name} (${r.distributor_code}) aún no ha registrado su primer día — anímalo a empezar 🚀`,
       user_id: r.id,
       since: r.last_message_at,
     }));
