@@ -12,10 +12,21 @@ const router = express.Router();
 router.get('/', requireAuth, (req, res) => {
   const activeOnly = req.query.active_only === 'true';
   const todayOnly = req.query.today === 'true';
-  const sql = activeOnly
-    ? 'SELECT * FROM events WHERE active = 1 ORDER BY date DESC, id DESC'
-    : 'SELECT * FROM events ORDER BY active DESC, date DESC, id DESC';
-  let events = db.prepare(sql).all();
+
+  // Filtro por sistema:
+  //   lider_supremo → ve TODOS los eventos (todos los sistemas + globales)
+  //   resto         → eventos de su sistema OR globales (system_id IS NULL)
+  let scopeSql = '';
+  const params = [];
+  if (req.user.role !== 'lider_supremo') {
+    scopeSql = ' AND (system_id = ? OR system_id IS NULL)';
+    params.push(req.user.system_id);
+  }
+
+  const base = activeOnly
+    ? `SELECT * FROM events WHERE active = 1 ${scopeSql} ORDER BY date DESC, id DESC`
+    : `SELECT * FROM events WHERE 1=1 ${scopeSql} ORDER BY active DESC, date DESC, id DESC`;
+  let events = db.prepare(base).all(...params);
   if (todayOnly) events = events.filter((ev) => eventHappensToday(ev));
 
   // Decorar con label legible de día
@@ -36,13 +47,24 @@ router.get('/', requireAuth, (req, res) => {
 });
 
 router.post('/', requireAuth, requireRole('lider_supremo', 'system_leader', 'module_leader'), (req, res) => {
-  const { name, stage_target, date, recurrence_type, recurrence_days } = req.body || {};
+  const { name, stage_target, date, recurrence_type, recurrence_days, system_id } = req.body || {};
   if (!name || !stage_target || !date) return res.status(400).json({ error: 'Faltan campos' });
   if (!SCANNABLE_STAGES.includes(stage_target)) return res.status(400).json({ error: 'Etapa inválida' });
+
+  // system_id:
+  //   lider_supremo → puede crear global (NULL) o específico (envía system_id)
+  //   resto         → siempre del sistema propio
+  let finalSystemId;
+  if (req.user.role === 'lider_supremo') {
+    finalSystemId = system_id === null ? null : (system_id ? parseInt(system_id, 10) : null);
+  } else {
+    finalSystemId = req.user.system_id;
+  }
+
   const info = db.prepare(`
-    INSERT INTO events (name, stage_target, date, recurrence_type, recurrence_days)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(name, stage_target, date, recurrence_type || 'one_time', recurrence_days || null);
+    INSERT INTO events (name, stage_target, date, recurrence_type, recurrence_days, system_id)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(name, stage_target, date, recurrence_type || 'one_time', recurrence_days || null, finalSystemId);
   res.status(201).json({ event: db.prepare('SELECT * FROM events WHERE id = ?').get(info.lastInsertRowid) });
 });
 

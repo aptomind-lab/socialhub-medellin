@@ -77,14 +77,36 @@ router.post('/', requireAuth, async (req, res) => {
     return res.status(403).json({ error: 'No tienes permiso para crear este rol' });
   }
 
-  // system_id: lider_supremo lo elige libre (si crea SL en otro sistema), el resto hereda.
+  // system_id: lider_supremo puede crear/elegir el sistema; resto hereda.
+  // Si crea un system_leader y pasa `system_name`, busca/crea el sistema con ese nombre.
   let finalSystemId = null;
+  const warnings = [];
   if (req.user.role === 'lider_supremo') {
-    finalSystemId = system_id ? parseInt(system_id, 10) : req.user.system_id || 1;
+    if (role === 'system_leader' && req.body.system_name) {
+      const sysName = String(req.body.system_name).trim();
+      let sys = db.prepare('SELECT id FROM systems WHERE nombre = ?').get(sysName);
+      if (!sys) {
+        const info = db.prepare('INSERT INTO systems (nombre) VALUES (?)').run(sysName);
+        sys = { id: info.lastInsertRowid };
+      }
+      finalSystemId = sys.id;
+    } else {
+      finalSystemId = system_id ? parseInt(system_id, 10) : (req.user.system_id || 1);
+    }
   } else {
     finalSystemId = req.user.system_id; // SL/ML solo dentro de su sistema
   }
-  if (role === 'lider_supremo') finalSystemId = null; // los líderes supremos son cross-system
+  if (role === 'lider_supremo') finalSystemId = null; // cross-system
+
+  // Warning si el sistema ya tiene 2+ system_leaders.
+  if (role === 'system_leader' && finalSystemId) {
+    const slCount = db.prepare(
+      "SELECT COUNT(*) AS c FROM users WHERE role = 'system_leader' AND system_id = ? AND active = 1"
+    ).get(finalSystemId).c;
+    if (slCount >= 2) {
+      warnings.push(`Este sistema ya tiene ${slCount} líder(es) de sistema activo(s). Se permite por encima del máximo recomendado (2).`);
+    }
+  }
 
   // Módulo: lider_supremo y SL libres; ML siempre el suyo. Roles altos no requieren módulo.
   let finalModuleId = module_id ? parseInt(module_id, 10) : null;
@@ -148,6 +170,7 @@ router.post('/', requireAuth, async (req, res) => {
     initial_password: emailResult.skipped ? tempPwd : undefined, // solo si no se pudo enviar email
     email_sent: !emailResult.skipped,
     login_url: emailResult.login_url,
+    warnings: warnings.length ? warnings : undefined,
   });
 });
 

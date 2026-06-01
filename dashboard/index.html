@@ -123,6 +123,7 @@
         <a class="nav-item" data-view="guests">Invitados</a>
         <a class="nav-item" data-view="messages">Mensajes</a>
         <a class="nav-item" data-view="events" data-roles="lider_supremo,system_leader,module_leader">Eventos</a>
+        <a class="nav-item" data-view="latam">Top LATAM 🌎</a>
         <a class="nav-item" data-view="logros">Logros 🔥</a>
         <a class="nav-item" data-view="profile">Mi Perfil</a>
       </nav>
@@ -145,7 +146,7 @@
         </div>
         <button id="open-daily-log" class="ghost-btn" style="display:flex;align-items:center;gap:8px;" title="Registrar mi actividad de hoy">
           <span style="font-size:14px;">✎</span>
-          <span id="daily-log-summary">¿Cómo estuvo tu día? Registra 💪</span>
+          <span id="daily-log-summary">Registrar actividad</span>
         </button>
         <div id="streak-badge" class="streak-badge" hidden title="Tu racha actual">
           <span class="streak-icon">🔥</span>
@@ -489,6 +490,22 @@
           <header class="panel-head"><h3>Últimos escaneos de esta sesión</h3></header>
           <div id="sc-recent" class="scanner-recent"></div>
         </article>
+      </section>
+
+      <!-- TOP LATAM -->
+      <section class="view" data-view="latam">
+        <h2 class="view-title">Top LATAM 🌎</h2>
+        <p class="hint" style="margin: 0 0 18px;">Ranking cross-system del mes en curso. Visible para todos los roles.</p>
+        <div class="grid-2">
+          <article class="panel">
+            <header class="panel-head"><h3>🏆 Top 10 — Profesionales Firmados</h3></header>
+            <ol id="latam-signs" class="rank-list"></ol>
+          </article>
+          <article class="panel">
+            <header class="panel-head"><h3>🎟️ Top 10 — Shows B.I.T</h3></header>
+            <ol id="latam-bit" class="rank-list"></ol>
+          </article>
+        </div>
       </section>
 
       <!-- PROFILE -->

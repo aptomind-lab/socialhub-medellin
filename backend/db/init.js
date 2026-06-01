@@ -44,7 +44,8 @@ if (userCount === 0) {
 
   db.transaction(() => {
     // ─ Líderes de Sistema (Diamante Negro) ─
-    insertUser.run('Juan Carlos Medellín', 'juancarlos@socialhubmedellin.com', '+57 300 100 0001', '1340', hash, 'system_leader', SYSTEM_ID, null, null, 'Diamante Negro');
+    // JCM es lider_supremo (cross-system, system_id=NULL). Felipe queda como system_leader.
+    insertUser.run('Juan Carlos Medellín', 'juancarlos@socialhubmedellin.com', '+57 300 100 0001', '1340', hash, 'lider_supremo', null, null, null, 'Diamante Negro');
     insertUser.run('Felipe Barrios',       'felipe@socialhubmedellin.com',     '+57 300 100 0002', 'FB002',  hash, 'system_leader', SYSTEM_ID, null, null, 'Diamante Negro');
 
     // ─ Líderes de Módulo (uno por módulo) ─

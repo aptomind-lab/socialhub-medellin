@@ -176,10 +176,12 @@ CREATE TABLE IF NOT EXISTS events (
   recurrence_type TEXT    NOT NULL DEFAULT 'one_time',
   recurrence_days TEXT,
   active          INTEGER NOT NULL DEFAULT 1,
+  system_id       INTEGER REFERENCES systems(id) ON DELETE SET NULL,
   created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE INDEX IF NOT EXISTS idx_events_date ON events(date);
+CREATE INDEX IF NOT EXISTS idx_events_date      ON events(date);
+CREATE INDEX IF NOT EXISTS idx_events_system_id ON events(system_id);
 
 -- Asistencia diaria al Working Group
 -- Cada scan en un evento cuya stage_target = 'WORKING_GROUP' inserta una fila aquí.

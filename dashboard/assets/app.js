@@ -176,6 +176,31 @@
     if (v === 'scanner')    loadScanner();
     if (v !== 'scanner')    stopScanning();
     if (v === 'logros')     loadLogros();
+    if (v === 'latam')      loadLatam();
+  }
+
+  // ============ TOP 10 LATAM ============
+  async function loadLatam() {
+    try {
+      const [signs, bit] = await Promise.all([
+        api('/api/rankings/latam-signs'),
+        api('/api/rankings/latam-bit'),
+      ]);
+      $('latam-signs').innerHTML = renderLatamRows(signs.rows, 'signs');
+      $('latam-bit').innerHTML   = renderLatamRows(bit.rows,   'bit_shows');
+    } catch (err) { handleErr(err); }
+  }
+  function renderLatamRows(rows, metric) {
+    if (!rows || !rows.length) return '<li class="muted">Sin datos del mes aún.</li>';
+    return rows.map((r, i) => {
+      const medal = ['🥇','🥈','🥉'][i] || `${i + 1}.`;
+      const sys = r.system_name ? ` <span class="muted" style="font-size:11px;">· ${r.system_name}</span>` : '';
+      return `<li>
+        <span class="rank-place">${medal}</span>
+        <span class="rank-name">${r.full_name}${sys}</span>
+        <span class="rank-xp">${r[metric]}</span>
+      </li>`;
+    }).join('');
   }
 
   // ============ GAMIFICACIÓN ============
@@ -206,7 +231,7 @@
   }
 
   function streakMessage(n) {
-    if (n === 0) return '¿Cómo estuvo tu día hoy? 💪';
+    if (n === 0) return 'Comienza tu racha 💪';
     if (n === 1) return '¡Buen comienzo!';
     if (n < 7)   return `Llevas ${n} días — no la rompas 🔥`;
     if (n < 30)  return `¡${n} días! Estás imparable`;
@@ -530,6 +555,7 @@
       const data = await api('/api/team/role-breakdown');
       const root = $('team-content');
       $('team-title').textContent = ({
+        systems:            'Comparación entre sistemas',
         modules:            'Comparación entre módulos',
         productive_leaders: `Líderes Productivos · Módulo ${me.module_number}`,
         mesa:               `Mi mesa · ${me.full_name}`,
@@ -560,13 +586,14 @@
     ` : '';
 
     const headers = ({
+      systems:            ['Sistema', 'Mensajes mes', 'Books mes', 'B.I.T mes', 'Firmados', '% B.I.T → Firma'],
       modules:            ['Módulo', 'Mensajes mes', 'Books mes', 'B.I.T mes', 'Firmados', '% B.I.T → Firma'],
       productive_leaders: ['Líder Productivo', 'Hoy', 'Semana', 'Mes', 'Books mes', 'B.I.T sem', 'Firmados', '% Conv.'],
       mesa:               ['Profesional', 'Hoy', 'Sem', 'Mes', 'Books sem', 'Shows sem', 'B.I.T sem', '% Conv.', 'Estado'],
     })[data.kind];
 
     const rowHtml = data.rows.map((r) => {
-      if (data.kind === 'modules') {
+      if (data.kind === 'systems' || data.kind === 'modules') {
         return `<tr>
           <td><strong>${r.label}</strong><div class="muted" style="font-size:11px;">${r.sublabel}</div></td>
           <td>${r.messages_month}</td>
@@ -863,6 +890,11 @@
       <div class="field"><label>Correo electrónico</label><input id="nu-email" type="email" placeholder="correo@dominio.com" required /></div>
       <div class="field"><label>Rol</label><select id="nu-role">${roleOpts}</select></div>
       <div class="field"><label>Rango BHIP</label><select id="nu-rank">${rankOpts}</select></div>
+      <div class="field" id="nu-system-name-wrap" style="display:none;">
+        <label>Nombre del sistema (oficina)</label>
+        <input id="nu-system-name" type="text" placeholder="Ej. SocialHub Medellín" />
+        <div class="hint">Si el sistema ya existe, se reutiliza. Si no, se crea uno nuevo.</div>
+      </div>
       <div class="field" id="nu-module-wrap"><label>Módulo</label><select id="nu-module">${moduleOpts}</select></div>
       <div class="field" id="nu-pl-wrap" style="display:none;"><label>Mesa (Líder Productivo)</label><select id="nu-pl"></select></div>
       <p class="hint" style="margin: 0 0 14px;">El sistema generará una contraseña temporal y enviará al usuario un correo con sus credenciales. En su primer ingreso deberá completar nombre, celular y elegir su contraseña personal.</p>
@@ -875,7 +907,10 @@
       $('nu-pl-wrap').style.display = role === 'distributor' ? '' : 'none';
       const pls = cachedProductiveLeaders.filter((p) => !modId || p.module_id == modId);
       $('nu-pl').innerHTML = pls.length ? pls.map((p) => `<option value="${p.id}">${p.full_name}</option>`).join('') : '<option value="">— sin líder productivo —</option>';
-      $('nu-module-wrap').style.display = role === 'system_leader' ? 'none' : '';
+      $('nu-module-wrap').style.display = (role === 'system_leader' || role === 'lider_supremo') ? 'none' : '';
+      // Campo "nombre del sistema" solo si actor es lider_supremo creando un SL
+      const ssWrap = $('nu-system-name-wrap');
+      if (ssWrap) ssWrap.style.display = (me.role === 'lider_supremo' && role === 'system_leader') ? '' : 'none';
     }
     refreshFields();
     $('nu-role').addEventListener('change', refreshFields);
@@ -884,22 +919,26 @@
     $('save-user').addEventListener('click', async () => {
       try {
         const role = $('nu-role').value;
-        const r = await api('/api/users', {
-          method: 'POST',
-          body: JSON.stringify({
-            distributor_code: $('nu-code').value.trim(),
-            email: $('nu-email').value.trim(),
-            role,
-            bhip_rank: $('nu-rank').value,
-            module_id: role === 'system_leader' ? null : ($('nu-module').value || null),
-            productive_leader_id: role === 'distributor' ? ($('nu-pl').value || null) : null,
-          }),
-        });
+        const body = {
+          distributor_code: $('nu-code').value.trim(),
+          email: $('nu-email').value.trim(),
+          role,
+          bhip_rank: $('nu-rank').value,
+          module_id: (role === 'system_leader' || role === 'lider_supremo') ? null : ($('nu-module').value || null),
+          productive_leader_id: role === 'distributor' ? ($('nu-pl').value || null) : null,
+        };
+        // system_name solo cuando lider_supremo crea un SL
+        if (me.role === 'lider_supremo' && role === 'system_leader') {
+          const sn = ($('nu-system-name') || {}).value || '';
+          if (sn.trim()) body.system_name = sn.trim();
+        }
+        const r = await api('/api/users', { method: 'POST', body: JSON.stringify(body) });
         closeModal();
+        const warn = (r.warnings || []).length ? `\n\n⚠ ${r.warnings.join('\n')}` : '';
         if (r.email_sent) {
-          alert(`✓ Usuario creado.\n\nID: ${r.user.distributor_code}\nRol: ${r.user.role_label}\nRango: ${r.user.bhip_rank}\n\nSe envió correo de bienvenida con la contraseña temporal a ${r.user.email}.`);
+          alert(`✓ Usuario creado.\n\nID: ${r.user.distributor_code}\nRol: ${r.user.role_label}\nRango: ${r.user.bhip_rank}\n\nSe envió correo de bienvenida con la contraseña temporal a ${r.user.email}.${warn}`);
         } else {
-          alert(`✓ Usuario creado.\n\nID: ${r.user.distributor_code}\nRol: ${r.user.role_label}\nRango: ${r.user.bhip_rank}\n\n⚠ SMTP no configurado — entrega manualmente:\nContraseña temporal: ${r.initial_password}`);
+          alert(`✓ Usuario creado.\n\nID: ${r.user.distributor_code}\nRol: ${r.user.role_label}\nRango: ${r.user.bhip_rank}\n\n⚠ SMTP no configurado — entrega manualmente:\nContraseña temporal: ${r.initial_password}${warn}`);
         }
         loadUsers();
       } catch (err) { alert(err.message); }
@@ -1660,7 +1699,7 @@
       if (r.record) {
         $('daily-log-summary').textContent = `Hoy: ${r.record.count} msgs · ${r.record.books_count} books`;
       } else {
-        $('daily-log-summary').textContent = '¿Cómo estuvo tu día? Registra 💪';
+        $('daily-log-summary').textContent = 'Registrar actividad';
       }
     } catch (e) { /* silent */ }
   }
