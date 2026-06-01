@@ -137,6 +137,9 @@ function publicUser(u) {
   const moduleNumber = u.module_id
     ? db.prepare('SELECT number FROM modules WHERE id = ?').get(u.module_id)?.number
     : null;
+  const systemName = u.system_id
+    ? db.prepare('SELECT nombre FROM systems WHERE id = ?').get(u.system_id)?.nombre
+    : null;
   let teamLeaderName = null;
   if (u.productive_leader_id) {
     const tl = db.prepare('SELECT full_name FROM users WHERE id = ?').get(u.productive_leader_id);
@@ -151,6 +154,8 @@ function publicUser(u) {
     role: u.role,
     role_label: ROLE_LABELS[u.role],
     bhip_rank: u.bhip_rank,
+    system_id: u.system_id,
+    system_name: systemName,
     module_id: u.module_id,
     module_number: moduleNumber,
     productive_leader_id: u.productive_leader_id,

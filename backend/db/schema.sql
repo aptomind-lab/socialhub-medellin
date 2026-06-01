@@ -2,6 +2,13 @@
 PRAGMA foreign_keys = ON;
 PRAGMA journal_mode = WAL;
 
+CREATE TABLE IF NOT EXISTS systems (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  nombre      TEXT    NOT NULL UNIQUE,
+  active      INTEGER NOT NULL DEFAULT 1,
+  created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS modules (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
   number       INTEGER NOT NULL UNIQUE,
@@ -22,7 +29,8 @@ CREATE TABLE IF NOT EXISTS users (
   phone                 TEXT,
   distributor_code      TEXT    NOT NULL UNIQUE,
   password_hash         TEXT,
-  role                  TEXT    NOT NULL CHECK (role IN ('system_leader','module_leader','productive_leader','distributor')),
+  role                  TEXT    NOT NULL CHECK (role IN ('lider_supremo','system_leader','module_leader','productive_leader','distributor')),
+  system_id             INTEGER REFERENCES systems(id) ON DELETE SET NULL,
   module_id             INTEGER REFERENCES modules(id) ON DELETE SET NULL,
   productive_leader_id  INTEGER REFERENCES users(id) ON DELETE SET NULL,
   firmado_por           INTEGER REFERENCES users(id) ON DELETE SET NULL,
@@ -38,6 +46,7 @@ CREATE INDEX IF NOT EXISTS idx_users_role     ON users(role);
 CREATE INDEX IF NOT EXISTS idx_users_module   ON users(module_id);
 CREATE INDEX IF NOT EXISTS idx_users_team     ON users(productive_leader_id);
 CREATE INDEX IF NOT EXISTS idx_users_firmado_por ON users(firmado_por);
+CREATE INDEX IF NOT EXISTS idx_users_system_id   ON users(system_id);
 CREATE INDEX IF NOT EXISTS idx_users_rank     ON users(bhip_rank);
 CREATE INDEX IF NOT EXISTS idx_users_code     ON users(distributor_code);
 

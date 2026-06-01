@@ -29,7 +29,7 @@ router.get('/kpis', requireAuth, (req, res) => {
   const scope = scopeUsersClause(req.user, 'u');
 
   // Filtros adicionales por módulo (solo si el actor lo permite)
-  const moduleFilter = (module_id && (req.user.role === 'system_leader' || parseInt(module_id, 10) === req.user.module_id))
+  const moduleFilter = (module_id && (['lider_supremo','system_leader'].includes(req.user.role) || parseInt(module_id, 10) === req.user.module_id))
     ? { sql: ' AND u.module_id = ?', params: [module_id] }
     : { sql: '', params: [] };
 
@@ -102,7 +102,7 @@ router.get('/funnel', requireAuth, (req, res) => {
   const extraFilters = [];
   const extraParams = [];
 
-  if (module_id && (req.user.role === 'system_leader' || parseInt(module_id, 10) === req.user.module_id)) {
+  if (module_id && (['lider_supremo','system_leader'].includes(req.user.role) || parseInt(module_id, 10) === req.user.module_id)) {
     extraFilters.push('u.module_id = ?'); extraParams.push(module_id);
   }
   if (productive_leader_id) {
@@ -181,7 +181,7 @@ router.get('/by-module', requireAuth, (req, res) => {
   const { from, to } = buildMonthRange(month);
 
   let modules;
-  if (req.user.role === 'system_leader') {
+  if (req.user.role === 'lider_supremo' || req.user.role === 'system_leader') {
     modules = db.prepare('SELECT * FROM modules ORDER BY number').all();
   } else if (req.user.module_id) {
     modules = db.prepare('SELECT * FROM modules WHERE id = ?').all(req.user.module_id);
@@ -227,7 +227,7 @@ router.get('/by-module', requireAuth, (req, res) => {
 router.get('/monthly', requireAuth, (req, res) => {
   const { module_id } = req.query;
   const scope = scopeUsersClause(req.user, 'u');
-  const moduleFilter = (module_id && (req.user.role === 'system_leader' || parseInt(module_id, 10) === req.user.module_id))
+  const moduleFilter = (module_id && (['lider_supremo','system_leader'].includes(req.user.role) || parseInt(module_id, 10) === req.user.module_id))
     ? { sql: ' AND u.module_id = ?', params: [module_id] } : { sql: '', params: [] };
 
   const sql = `
@@ -245,7 +245,7 @@ router.get('/monthly', requireAuth, (req, res) => {
 // ================= COMPARACIÓN SEMANAL Y MENSUAL =================
 router.get('/comparison', requireAuth, (req, res) => {
   const scope = scopeUsersClause(req.user, 'u');
-  const moduleFilter = (req.query.module_id && (req.user.role === 'system_leader' || parseInt(req.query.module_id, 10) === req.user.module_id))
+  const moduleFilter = (req.query.module_id && (['lider_supremo','system_leader'].includes(req.user.role) || parseInt(req.query.module_id, 10) === req.user.module_id))
     ? { sql: ' AND u.module_id = ?', params: [req.query.module_id] } : { sql: '', params: [] };
 
   function metricsInRange(from, to) {

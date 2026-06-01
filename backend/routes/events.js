@@ -35,7 +35,7 @@ router.get('/', requireAuth, (req, res) => {
   });
 });
 
-router.post('/', requireAuth, requireRole('system_leader', 'module_leader'), (req, res) => {
+router.post('/', requireAuth, requireRole('lider_supremo', 'system_leader', 'module_leader'), (req, res) => {
   const { name, stage_target, date, recurrence_type, recurrence_days } = req.body || {};
   if (!name || !stage_target || !date) return res.status(400).json({ error: 'Faltan campos' });
   if (!SCANNABLE_STAGES.includes(stage_target)) return res.status(400).json({ error: 'Etapa inválida' });
@@ -46,7 +46,7 @@ router.post('/', requireAuth, requireRole('system_leader', 'module_leader'), (re
   res.status(201).json({ event: db.prepare('SELECT * FROM events WHERE id = ?').get(info.lastInsertRowid) });
 });
 
-router.patch('/:id', requireAuth, requireRole('system_leader', 'module_leader'), (req, res) => {
+router.patch('/:id', requireAuth, requireRole('lider_supremo', 'system_leader', 'module_leader'), (req, res) => {
   const { name, stage_target, date, active, recurrence_type, recurrence_days } = req.body || {};
   const fields = [], values = [];
   if (name !== undefined)            { fields.push('name = ?');            values.push(name); }
@@ -64,7 +64,7 @@ router.patch('/:id', requireAuth, requireRole('system_leader', 'module_leader'),
   res.json({ event: db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id) });
 });
 
-router.delete('/:id', requireAuth, requireRole('system_leader'), (req, res) => {
+router.delete('/:id', requireAuth, requireRole('lider_supremo', 'system_leader'), (req, res) => {
   db.prepare('DELETE FROM events WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });

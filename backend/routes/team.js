@@ -61,7 +61,7 @@ function statsForUser(userId, b) {
 }
 
 // GET /api/team/productivity — la vista clásica (lista de distributors visibles).
-router.get('/productivity', requireAuth, requireRole('system_leader', 'module_leader', 'productive_leader'),
+router.get('/productivity', requireAuth, requireRole('lider_supremo', 'system_leader', 'module_leader', 'productive_leader'),
   (req, res) => {
     const b = rangeBounds();
     const scope = scopeUsersClause(req.user, 'u');
@@ -113,6 +113,32 @@ router.get('/productivity', requireAuth, requireRole('system_leader', 'module_le
 router.get('/role-breakdown', requireAuth, (req, res) => {
   const b = rangeBounds();
   const role = req.user.role;
+
+  // lider_supremo: comparativa global de sistemas (en el futuro habrá varios).
+  if (role === 'lider_supremo') {
+    const systems = db.prepare('SELECT id, nombre FROM systems WHERE active=1 ORDER BY id').all();
+    const rows = systems.map((s) => {
+      const r = db.prepare(`
+        SELECT
+          (SELECT IFNULL(SUM(dm.messages),0) FROM daily_activity dm
+             JOIN users u ON u.id=dm.user_id WHERE u.system_id=? AND dm.date>=?) AS messages_month,
+          (SELECT IFNULL(SUM(dm.books),0) FROM daily_activity dm
+             JOIN users u ON u.id=dm.user_id WHERE u.system_id=? AND dm.date>=?) AS books_month,
+          (SELECT COUNT(DISTINCT h.guest_id) FROM stage_history h
+             JOIN guests g ON g.id=h.guest_id JOIN users u ON u.id=g.distributor_id
+             WHERE u.system_id=? AND h.to_stage='BIT' AND date(h.scanned_at)>=?) AS bit_month,
+          (SELECT COUNT(*) FROM guests g JOIN users u ON u.id=g.distributor_id
+             WHERE u.system_id=? AND g.current_stage='FIRMADO' AND g.signed_month=substr(?,1,7)) AS signed_month
+      `).get(s.id, b.monthStart, s.id, b.monthStart, s.id, b.monthStart, s.id, b.today);
+      return {
+        kind: 'system',
+        id: s.id, label: s.nombre, sublabel: 'Sistema',
+        ...r,
+        conversion_pct: r.bit_month > 0 ? Math.round((r.signed_month / r.bit_month) * 1000) / 10 : 0,
+      };
+    });
+    return res.json({ kind: 'systems', reference: b, rows });
+  }
 
   if (role === 'system_leader') {
     const modules = db.prepare('SELECT id, number, name FROM modules WHERE active=1 ORDER BY number').all();

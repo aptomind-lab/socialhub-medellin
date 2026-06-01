@@ -20,11 +20,13 @@ router.get('/', requireAuth, (req, res) => {
 
   let sql = `
     SELECT u.*, m.number AS module_number, m.name AS module_name,
+      s.nombre AS system_name,
       pl.full_name AS productive_leader_name,
       (SELECT MAX(created_at) FROM daily_activity dm WHERE dm.user_id = u.id) AS last_message_at,
       (SELECT COUNT(*) FROM guests g WHERE g.distributor_id = u.id) AS total_guests
     FROM users u
     LEFT JOIN modules m ON m.id = u.module_id
+    LEFT JOIN systems s ON s.id = u.system_id
     LEFT JOIN users pl ON pl.id = u.productive_leader_id
     WHERE 1=1 ${scope.sql}
   `;
@@ -50,7 +52,7 @@ router.get('/', requireAuth, (req, res) => {
 //   module_leader  → solo productive_leader y distributor, dentro de SU módulo
 //   productive_leader / distributor → no pueden crear
 router.post('/', requireAuth, async (req, res) => {
-  const { distributor_code, email, role, bhip_rank, module_id, productive_leader_id } = req.body || {};
+  const { distributor_code, email, role, bhip_rank, module_id, productive_leader_id, system_id } = req.body || {};
   if (!distributor_code || !email || !role || !bhip_rank) {
     return res.status(400).json({ error: 'ID, correo, rol y rango son obligatorios' });
   }
@@ -58,22 +60,38 @@ router.post('/', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'Rango BHIP inválido', valid: BHIP_RANKS });
   }
 
+  // Matriz de creación:
+  //   lider_supremo  → cualquier rol (incluye otro lider_supremo)
+  //   system_leader  → module_leader, productive_leader, distributor (solo en su sistema)
+  //   module_leader  → productive_leader, distributor (solo en su módulo)
+  //   PL / distributor → no pueden crear
   const allowedByActor = {
-    system_leader: ['system_leader', 'module_leader', 'productive_leader', 'distributor'],
-    module_leader: ['productive_leader', 'distributor'],
+    lider_supremo:    ['lider_supremo', 'system_leader', 'module_leader', 'productive_leader', 'distributor'],
+    system_leader:    ['module_leader', 'productive_leader', 'distributor'],
+    module_leader:    ['productive_leader', 'distributor'],
     productive_leader: [],
-    distributor: [],
+    distributor:      [],
   }[req.user.role] || [];
 
   if (!allowedByActor.includes(role)) {
     return res.status(403).json({ error: 'No tienes permiso para crear este rol' });
   }
 
-  // Módulo: SL libre; ML siempre el suyo
+  // system_id: lider_supremo lo elige libre (si crea SL en otro sistema), el resto hereda.
+  let finalSystemId = null;
+  if (req.user.role === 'lider_supremo') {
+    finalSystemId = system_id ? parseInt(system_id, 10) : req.user.system_id || 1;
+  } else {
+    finalSystemId = req.user.system_id; // SL/ML solo dentro de su sistema
+  }
+  if (role === 'lider_supremo') finalSystemId = null; // los líderes supremos son cross-system
+
+  // Módulo: lider_supremo y SL libres; ML siempre el suyo. Roles altos no requieren módulo.
   let finalModuleId = module_id ? parseInt(module_id, 10) : null;
   if (req.user.role === 'module_leader') finalModuleId = req.user.module_id;
-  if (role === 'system_leader') finalModuleId = null;
-  if (role !== 'system_leader' && !finalModuleId) {
+  if (role === 'lider_supremo' || role === 'system_leader') finalModuleId = null;
+  const needsModule = role === 'module_leader' || role === 'productive_leader' || role === 'distributor';
+  if (needsModule && !finalModuleId) {
     return res.status(400).json({ error: 'Este rol requiere módulo' });
   }
 
@@ -100,10 +118,10 @@ router.post('/', requireAuth, async (req, res) => {
   try {
     const info = db.prepare(`
       INSERT INTO users (full_name, email, distributor_code, password_hash,
-                         role, module_id, productive_leader_id, bhip_rank,
+                         role, system_id, module_id, productive_leader_id, bhip_rank,
                          password_must_change, profile_completed)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 0)
-    `).run(placeholderName, cleanEmail, code, hash, role, finalModuleId, finalPLId, bhip_rank);
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0)
+    `).run(placeholderName, cleanEmail, code, hash, role, finalSystemId, finalModuleId, finalPLId, bhip_rank);
     newId = info.lastInsertRowid;
   } catch (err) {
     if (String(err).includes('UNIQUE')) return res.status(409).json({ error: 'Conflicto de unicidad' });
@@ -137,9 +155,11 @@ router.get('/:id', requireAuth, (req, res) => {
   refreshUserBlock(req.params.id);
   const u = db.prepare(`
     SELECT u.*, m.number AS module_number, m.name AS module_name,
+      s.nombre AS system_name,
       pl.full_name AS productive_leader_name
     FROM users u
     LEFT JOIN modules m ON m.id = u.module_id
+    LEFT JOIN systems s ON s.id = u.system_id
     LEFT JOIN users pl ON pl.id = u.productive_leader_id
     WHERE u.id = ?
   `).get(req.params.id);
@@ -156,12 +176,18 @@ router.patch('/:id', requireAuth, (req, res) => {
   if (!target) return res.status(404).json({ error: 'Usuario no encontrado' });
   if (!canActOn(req.user, target)) return res.status(403).json({ error: 'No tienes acceso a este usuario' });
 
-  const { full_name, email, phone, module_id, productive_leader_id, active, password, bhip_rank } = req.body || {};
+  const { full_name, email, phone, module_id, productive_leader_id, active, password, bhip_rank, system_id } = req.body || {};
   const fields = [], values = [];
   if (full_name !== undefined) { fields.push('full_name = ?'); values.push(full_name); }
   if (email !== undefined)     { fields.push('email = ?');     values.push(email ? email.toLowerCase().trim() : null); }
   if (phone !== undefined)     { fields.push('phone = ?');     values.push(phone); }
-  if (module_id !== undefined && req.user.role === 'system_leader') { fields.push('module_id = ?'); values.push(module_id || null); }
+  // Solo lider_supremo puede mover usuarios entre sistemas.
+  if (system_id !== undefined && req.user.role === 'lider_supremo') {
+    fields.push('system_id = ?'); values.push(system_id || null);
+  }
+  if (module_id !== undefined && ['lider_supremo','system_leader'].includes(req.user.role)) {
+    fields.push('module_id = ?'); values.push(module_id || null);
+  }
   if (productive_leader_id !== undefined) { fields.push('productive_leader_id = ?'); values.push(productive_leader_id || null); }
   if (active !== undefined)    { fields.push('active = ?');    values.push(active ? 1 : 0); }
   if (bhip_rank !== undefined) {
@@ -230,13 +256,18 @@ router.delete('/:id', requireAuth, (req, res) => {
 });
 
 function canActOn(actor, target) {
-  if (actor.role === 'system_leader') return true;
+  if (actor.role === 'lider_supremo') return true;
+  if (actor.role === 'system_leader') {
+    if (target.role === 'lider_supremo') return false;
+    return target.system_id === actor.system_id || target.id === actor.id;
+  }
   if (actor.role === 'module_leader') {
-    if (target.role === 'system_leader') return false;
+    if (target.role === 'lider_supremo' || target.role === 'system_leader') return false;
+    if (target.system_id !== actor.system_id) return false;
     return target.module_id === actor.module_id || target.id === actor.id;
   }
   if (actor.role === 'productive_leader') {
-    if (target.role === 'system_leader' || target.role === 'module_leader') return false;
+    if (['lider_supremo','system_leader','module_leader'].includes(target.role)) return false;
     return target.productive_leader_id === actor.id || target.id === actor.id;
   }
   return target.id === actor.id;
@@ -253,6 +284,8 @@ function decorate(u) {
     role: u.role,
     role_label: ROLE_LABELS[u.role],
     bhip_rank: u.bhip_rank,
+    system_id: u.system_id,
+    system_name: u.system_name,
     module_id: u.module_id,
     module_number: u.module_number,
     module_name: u.module_name,

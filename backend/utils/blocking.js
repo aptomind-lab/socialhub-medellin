@@ -44,7 +44,7 @@ function isDistributorUsable(user) {
 
 // Para el flujo del landing: cualquier rol puede contactar invitados (Opción B).
 // Validamos solo que esté activo y no bloqueado.
-const CONTACTOR_ROLES = ['distributor', 'productive_leader', 'module_leader', 'system_leader'];
+const CONTACTOR_ROLES = ['distributor', 'productive_leader', 'module_leader', 'system_leader', 'lider_supremo'];
 function isContactorUsable(user) {
   if (!user) return { ok: false, reason: 'NOT_FOUND' };
   if (!CONTACTOR_ROLES.includes(user.role)) return { ok: false, reason: 'INVALID_ROLE' };

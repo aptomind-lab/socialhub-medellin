@@ -45,8 +45,9 @@ function nextStageAfterScan(currentStage, targetStage) {
   return currentStage;
 }
 
-const ROLES = ['system_leader', 'module_leader', 'productive_leader', 'distributor'];
+const ROLES = ['lider_supremo', 'system_leader', 'module_leader', 'productive_leader', 'distributor'];
 const ROLE_LABELS = {
+  lider_supremo:      'Líder Supremo',
   system_leader:      'Líder de Sistema',
   module_leader:      'Líder de Módulo',
   productive_leader:  'Líder Productivo',

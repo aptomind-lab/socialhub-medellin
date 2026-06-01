@@ -10,7 +10,7 @@ function requireAuth(req, res, next) {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
     // Refrescar el usuario desde DB para tener role/scope al día
     const user = db.prepare(`
-      SELECT id, full_name, distributor_code, role, module_id, productive_leader_id, active,
+      SELECT id, full_name, distributor_code, role, system_id, module_id, productive_leader_id, active,
              password_must_change, profile_completed, bhip_rank, phone, email
       FROM users WHERE id = ?
     `).get(payload.id);
@@ -79,12 +79,18 @@ function downlineUserIds(actorId) {
 
 // Devuelve un objeto con los IDs de usuarios visibles para el actor según jerarquía.
 function visibleUserIds(actor) {
-  if (actor.role === 'system_leader') {
+  // Líder Supremo: TODO el universo (cross-system).
+  if (actor.role === 'lider_supremo') {
     return db.prepare('SELECT id FROM users').all().map((r) => r.id);
   }
+  // Líder de Sistema: solo usuarios de su system_id.
+  if (actor.role === 'system_leader') {
+    return db.prepare('SELECT id FROM users WHERE system_id = ?').all(actor.system_id).map((r) => r.id);
+  }
+  // Líder de Módulo: usuarios de su módulo dentro de su sistema.
   if (actor.role === 'module_leader') {
-    return db.prepare('SELECT id FROM users WHERE module_id = ? OR id = ?')
-      .all(actor.module_id, actor.id).map((r) => r.id);
+    return db.prepare('SELECT id FROM users WHERE module_id = ? AND system_id = ? OR id = ?')
+      .all(actor.module_id, actor.system_id, actor.id).map((r) => r.id);
   }
   // PL y distributor: downline recursivo (incluye al actor).
   return downlineUserIds(actor.id);
@@ -92,12 +98,17 @@ function visibleUserIds(actor) {
 
 // Devuelve { sql, params } con la cláusula WHERE adicional para limitar a usuarios visibles.
 function scopeUsersClause(actor, alias = 'u') {
-  if (actor.role === 'system_leader') return { sql: '', params: [] };
-  if (actor.role === 'module_leader') {
-    return { sql: `AND (${alias}.module_id = ? OR ${alias}.id = ?)`, params: [actor.module_id, actor.id] };
+  if (actor.role === 'lider_supremo') return { sql: '', params: [] };
+  if (actor.role === 'system_leader') {
+    return { sql: `AND ${alias}.system_id = ?`, params: [actor.system_id] };
   }
-  // PL / distributor → downline. Si un distributor no firmó a nadie, el set
-  // queda en [self] y el comportamiento es idéntico al anterior.
+  if (actor.role === 'module_leader') {
+    return {
+      sql: `AND ((${alias}.module_id = ? AND ${alias}.system_id = ?) OR ${alias}.id = ?)`,
+      params: [actor.module_id, actor.system_id, actor.id],
+    };
+  }
+  // PL / distributor → downline.
   const ids = downlineUserIds(actor.id);
   const placeholders = ids.map(() => '?').join(',');
   return { sql: `AND ${alias}.id IN (${placeholders})`, params: ids };
@@ -105,7 +116,7 @@ function scopeUsersClause(actor, alias = 'u') {
 
 // Filtra módulos visibles
 function visibleModuleIds(actor) {
-  if (actor.role === 'system_leader') {
+  if (actor.role === 'lider_supremo' || actor.role === 'system_leader') {
     return db.prepare('SELECT id FROM modules').all().map((r) => r.id);
   }
   return actor.module_id ? [actor.module_id] : [];

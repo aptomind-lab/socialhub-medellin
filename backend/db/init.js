@@ -7,6 +7,13 @@ const db = require('./index');
 const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
 db.exec(schema);
 
+// ── System default ──
+const sysCount = db.prepare('SELECT COUNT(*) AS c FROM systems').get().c;
+if (sysCount === 0) {
+  db.prepare(`INSERT INTO systems (id, nombre) VALUES (1, 'SocialHub Medellín')`).run();
+  console.log('✓ System default creado: SocialHub Medellín');
+}
+
 // ── Módulos ──
 const moduleCount = db.prepare('SELECT COUNT(*) AS c FROM modules').get().c;
 if (moduleCount === 0) {
@@ -26,9 +33,10 @@ if (userCount === 0) {
   const defaultPassword = process.env.DEFAULT_USER_PASSWORD || 'Sh2026!';
   const hash = bcrypt.hashSync(defaultPassword, 10);
 
+  const SYSTEM_ID = 1;
   const insertUser = db.prepare(`
-    INSERT INTO users (full_name, email, phone, distributor_code, password_hash, role, module_id, productive_leader_id, bhip_rank)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO users (full_name, email, phone, distributor_code, password_hash, role, system_id, module_id, productive_leader_id, bhip_rank)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const moduleIds = {};
@@ -36,12 +44,12 @@ if (userCount === 0) {
 
   db.transaction(() => {
     // ─ Líderes de Sistema (Diamante Negro) ─
-    insertUser.run('Juan Carlos Medellín', 'juancarlos@socialhubmedellin.com', '+57 300 100 0001', '1340', hash, 'system_leader', null, null, 'Diamante Negro');
-    insertUser.run('Felipe Barrios',       'felipe@socialhubmedellin.com',     '+57 300 100 0002', 'FB002',  hash, 'system_leader', null, null, 'Diamante Negro');
+    insertUser.run('Juan Carlos Medellín', 'juancarlos@socialhubmedellin.com', '+57 300 100 0001', '1340', hash, 'system_leader', SYSTEM_ID, null, null, 'Diamante Negro');
+    insertUser.run('Felipe Barrios',       'felipe@socialhubmedellin.com',     '+57 300 100 0002', 'FB002',  hash, 'system_leader', SYSTEM_ID, null, null, 'Diamante Negro');
 
     // ─ Líderes de Módulo (uno por módulo) ─
     const ml = (name, email, phone, code, modNum) =>
-      insertUser.run(name, email, phone, code, hash, 'module_leader', moduleIds[modNum], null, 'Profesional');
+      insertUser.run(name, email, phone, code, hash, 'module_leader', SYSTEM_ID, moduleIds[modNum], null, 'Profesional');
 
     ml('Carolina Restrepo', 'carolina.lm@socialhub.test', '+57 300 200 0003', 'M3LD01',  3);
     ml('Andrés Vélez',      'andres.lm@socialhub.test',   '+57 300 200 0005', 'M5LD01',  5);
@@ -50,7 +58,7 @@ if (userCount === 0) {
 
     // ─ Líderes Productivos ─ (mesa = equipo directo)
     const pl = (name, email, phone, code, modNum) => {
-      const r = insertUser.run(name, email, phone, code, hash, 'productive_leader', moduleIds[modNum], null, 'Profesional');
+      const r = insertUser.run(name, email, phone, code, hash, 'productive_leader', SYSTEM_ID, moduleIds[modNum], null, 'Profesional');
       return r.lastInsertRowid;
     };
     const sofia    = pl('Sofía López',     'sofia.pl@socialhub.test',    '+57 301 300 0301', 'M3PR01',  3);
@@ -60,7 +68,7 @@ if (userCount === 0) {
 
     // ─ Distribuidores (Profesionales Activos) ─
     const ds = (name, email, phone, code, modNum, plId) =>
-      insertUser.run(name, email, phone, code, hash, 'distributor', moduleIds[modNum], plId, 'Profesional');
+      insertUser.run(name, email, phone, code, hash, 'distributor', SYSTEM_ID, moduleIds[modNum], plId, 'Profesional');
 
     ds('Martín Sánchez',  'martin.ds@socialhub.test',  '+57 302 400 0301', 'M3DS01',  3,  sofia);
     ds('Valentina Cano',  'valentina.ds@socialhub.test', '+57 302 400 0302', 'M3DS02',  3,  sofia);

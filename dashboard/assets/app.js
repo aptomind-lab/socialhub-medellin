@@ -245,6 +245,7 @@
       ['Celular', me.phone || '—'],
       ['Rol', me.role_label],
       ['Rango BHIP', me.bhip_rank || '—'],
+      ['Sistema', me.system_name || '—'],
       ['Módulo', me.module_number ? `Módulo ${me.module_number}` : '—'],
       ['Mesa', me.team_leader_name || '—'],
     ];
@@ -846,12 +847,14 @@
     if (!cachedProductiveLeaders.length) await loadCachedUsers();
 
     const allowedRoles = ({
-      system_leader: ['system_leader', 'module_leader', 'productive_leader', 'distributor'],
+      lider_supremo: ['lider_supremo', 'system_leader', 'module_leader', 'productive_leader', 'distributor'],
+      system_leader: ['module_leader', 'productive_leader', 'distributor'],
       module_leader: ['productive_leader', 'distributor'],
     })[me.role] || [];
     if (!allowedRoles.length) return alert('No tienes permiso para crear usuarios.');
 
-    const roleOpts = allowedRoles.map((r) => `<option value="${r}">${({system_leader:'Líder de Sistema',module_leader:'Líder de Módulo',productive_leader:'Líder Productivo',distributor:'Profesional Activo'})[r]}</option>`).join('');
+    const ROLE_LABELS_MAP = { lider_supremo:'Líder Supremo', system_leader:'Líder de Sistema', module_leader:'Líder de Módulo', productive_leader:'Líder Productivo', distributor:'Profesional Activo' };
+    const roleOpts = allowedRoles.map((r) => `<option value="${r}">${ROLE_LABELS_MAP[r]}</option>`).join('');
     const rankOpts = BHIP_RANKS.map((r) => `<option value="${r}" ${r==='Profesional'?'selected':''}>${r}</option>`).join('');
     const moduleOpts = cachedModules.map((m) => `<option value="${m.id}">M${m.number} — ${m.name}</option>`).join('');
 
@@ -1042,7 +1045,7 @@
   });
 
   // ============ MESSAGES (registro diario universal) ============
-  const ROLE_SHORT = { system_leader: 'Líder Sistema', module_leader: 'Líder Módulo', productive_leader: 'Líder Productivo', distributor: 'Profesional Activo' };
+  const ROLE_SHORT = { lider_supremo: 'Líder Supremo', system_leader: 'Líder Sistema', module_leader: 'Líder Módulo', productive_leader: 'Líder Productivo', distributor: 'Profesional Activo' };
 
   async function loadMessages() {
     // Lista de usuarios visibles para el actor: respeta scope (SL todos, ML su módulo,
