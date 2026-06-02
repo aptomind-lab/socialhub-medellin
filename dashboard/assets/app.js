@@ -803,12 +803,8 @@
   $('new-module').addEventListener('click', async () => {
     let systemPicker = '';
     if (me.role === 'lider_supremo') {
-      // Lider supremo elige a qué sistema asignar el módulo.
-      // Reusamos cachedModules para inferir sistemas conocidos + opción global.
-      const knownSystems = {};
-      cachedModules.forEach((m) => { if (m.system_id) knownSystems[m.system_id] = m.system_name || `Sistema ${m.system_id}`; });
-      const sysOpts = Object.entries(knownSystems).map(([id, name]) => `<option value="${id}">${name}</option>`).join('');
-      systemPicker = `<div class="field"><label>Sistema</label><select id="new-mod-system">${sysOpts}</select></div>`;
+      await fetchSystems();
+      systemPicker = `<div class="field"><label>Sistema</label><select id="new-mod-system">${systemsOptions()}</select></div>`;
     }
     openModal('Nuevo módulo', `
       <div class="field"><label>Número</label><input type="number" inputmode="numeric" id="new-mod-number" /></div>
@@ -832,17 +828,22 @@
   });
 
   // ============ EDICIÓN MANUAL (lider_supremo) ============
-  // Helper: opciones de sistemas conocidos a partir de cachedModules.
-  function knownSystemsOptions(selectedId) {
-    const known = {};
-    cachedModules.forEach((m) => { if (m.system_id) known[m.system_id] = m.system_name || `Sistema ${m.system_id}`; });
-    return Object.entries(known).map(([id, name]) =>
-      `<option value="${id}" ${String(id) === String(selectedId) ? 'selected' : ''}>${name}</option>`
+  // Carga TODOS los sistemas (no solo los que ya tienen módulos).
+  let cachedSystems = [];
+  async function fetchSystems() {
+    try { const r = await api('/api/systems'); cachedSystems = r.systems || []; }
+    catch (e) { cachedSystems = []; }
+    return cachedSystems;
+  }
+  function systemsOptions(selectedId) {
+    return cachedSystems.map((s) =>
+      `<option value="${s.id}" ${String(s.id) === String(selectedId) ? 'selected' : ''}>${s.nombre}</option>`
     ).join('');
   }
 
-  function openEditModuleModal(d) {
-    const sysOpts = knownSystemsOptions(d.systemId);
+  async function openEditModuleModal(d) {
+    await fetchSystems();
+    const sysOpts = systemsOptions(d.systemId);
     openModal(`Editar módulo M${d.number}`, `
       <div class="field"><label>Nombre</label><input type="text" id="em-name" value="${d.name}" /></div>
       <div class="field"><label>Sistema</label><select id="em-system">${sysOpts}</select></div>
@@ -863,11 +864,12 @@
     });
   }
 
-  function openEditUserModal(u) {
+  async function openEditUserModal(u) {
+    await fetchSystems();
     const ROLES_FOR_EDIT = ['lider_supremo','system_leader','module_leader','productive_leader','distributor'];
     const ROLE_LABEL = { lider_supremo:'Líder Supremo', system_leader:'Líder de Sistema', module_leader:'Líder de Módulo', productive_leader:'Líder Productivo', distributor:'Profesional Activo' };
     const roleOpts = ROLES_FOR_EDIT.map((r) => `<option value="${r}" ${r === u.role ? 'selected' : ''}>${ROLE_LABEL[r]}</option>`).join('');
-    const sysOpts = knownSystemsOptions(u.system_id);
+    const sysOpts = systemsOptions(u.system_id);
     const modOpts = cachedModules.map((m) =>
       `<option value="${m.id}" ${m.id === u.module_id ? 'selected' : ''}>M${m.number} — ${m.name}${m.system_name ? ' · ' + m.system_name : ''}</option>`
     ).join('');

@@ -64,6 +64,7 @@ app.use('/api/team', require('./routes/team'));
 app.use('/api/activity', require('./routes/activity'));
 app.use('/api/gamification', require('./routes/gamification'));
 app.use('/api/rankings', require('./routes/rankings'));
+app.use('/api/systems', require('./routes/systems'));
 
 app.get('/g/:token', (req, res) => {
   const db = require('./db');
