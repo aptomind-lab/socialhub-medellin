@@ -749,8 +749,12 @@
     const sysTh = $('modules-sys-th'); if (sysTh) sysTh.hidden = !showSystemCol;
     $('modules-tbody').innerHTML = data.modules.map((m) => {
       const sysCell = showSystemCol ? `<td><span class="muted" style="font-size:12px;">${m.system_name || '—'}</span></td>` : '';
+      const editBtn = me.role === 'lider_supremo'
+        ? `<button class="ghost-btn" data-action="edit-mod" data-id="${m.id}" data-number="${m.number}" data-name="${m.name.replace(/"/g, '&quot;')}" data-system-id="${m.system_id || ''}">Editar</button>`
+        : '';
       const actions = canManage ? `
-        <button class="ghost-btn" data-action="toggle-mod" data-id="${m.id}" data-active="${m.active}">${m.active ? 'Desactivar' : 'Reactivar'}</button>
+        ${editBtn}
+        <button class="ghost-btn" data-action="toggle-mod" data-id="${m.id}" data-active="${m.active}" style="margin-left:6px;">${m.active ? 'Desactivar' : 'Reactivar'}</button>
         <button class="ghost-btn" data-action="delete-mod" data-id="${m.id}" data-name="${m.name.replace(/"/g, '&quot;')}" style="margin-left:6px;color:#FF8B95;border-color:rgba(220,90,100,0.3);">Eliminar</button>
       ` : '';
       return `
@@ -771,6 +775,9 @@
           loadModules();
         } catch (e) { alert(e.message); }
       });
+    });
+    $('modules-tbody').querySelectorAll('[data-action=edit-mod]').forEach((b) => {
+      b.addEventListener('click', () => openEditModuleModal(b.dataset));
     });
     $('modules-tbody').querySelectorAll('[data-action=delete-mod]').forEach((b) => {
       b.addEventListener('click', async () => {
@@ -824,6 +831,80 @@
     });
   });
 
+  // ============ EDICIÓN MANUAL (lider_supremo) ============
+  // Helper: opciones de sistemas conocidos a partir de cachedModules.
+  function knownSystemsOptions(selectedId) {
+    const known = {};
+    cachedModules.forEach((m) => { if (m.system_id) known[m.system_id] = m.system_name || `Sistema ${m.system_id}`; });
+    return Object.entries(known).map(([id, name]) =>
+      `<option value="${id}" ${String(id) === String(selectedId) ? 'selected' : ''}>${name}</option>`
+    ).join('');
+  }
+
+  function openEditModuleModal(d) {
+    const sysOpts = knownSystemsOptions(d.systemId);
+    openModal(`Editar módulo M${d.number}`, `
+      <div class="field"><label>Nombre</label><input type="text" id="em-name" value="${d.name}" /></div>
+      <div class="field"><label>Sistema</label><select id="em-system">${sysOpts}</select></div>
+      <p class="hint" style="margin: 0 0 14px;">Cambiar el sistema mueve este módulo a otra oficina. Los usuarios del módulo se quedan donde están.</p>
+      <button class="primary" id="em-save">Guardar cambios</button>
+    `);
+    $('em-save').addEventListener('click', async () => {
+      try {
+        await api(`/api/modules/${d.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            name: $('em-name').value.trim(),
+            system_id: parseInt($('em-system').value, 10) || null,
+          }),
+        });
+        closeModal(); loadModules();
+      } catch (e) { alert(e.message); }
+    });
+  }
+
+  function openEditUserModal(u) {
+    const ROLES_FOR_EDIT = ['lider_supremo','system_leader','module_leader','productive_leader','distributor'];
+    const ROLE_LABEL = { lider_supremo:'Líder Supremo', system_leader:'Líder de Sistema', module_leader:'Líder de Módulo', productive_leader:'Líder Productivo', distributor:'Profesional Activo' };
+    const roleOpts = ROLES_FOR_EDIT.map((r) => `<option value="${r}" ${r === u.role ? 'selected' : ''}>${ROLE_LABEL[r]}</option>`).join('');
+    const sysOpts = knownSystemsOptions(u.system_id);
+    const modOpts = cachedModules.map((m) =>
+      `<option value="${m.id}" ${m.id === u.module_id ? 'selected' : ''}>M${m.number} — ${m.name}${m.system_name ? ' · ' + m.system_name : ''}</option>`
+    ).join('');
+    const plOpts = cachedProductiveLeaders.map((p) =>
+      `<option value="${p.id}" ${p.id === u.productive_leader_id ? 'selected' : ''}>${p.full_name}</option>`
+    ).join('');
+
+    openModal(`Editar usuario — ${u.full_name}`, `
+      <div class="field"><label>Nombre completo</label><input type="text" id="eu-name" value="${(u.full_name || '').replace(/"/g, '&quot;')}" /></div>
+      <div class="field"><label>Correo</label><input type="email" id="eu-email" value="${u.email || ''}" /></div>
+      <div class="field"><label>Celular</label><input type="text" id="eu-phone" value="${u.phone || ''}" /></div>
+      <div class="field"><label>Rol</label><select id="eu-role">${roleOpts}</select></div>
+      <div class="field"><label>Sistema</label><select id="eu-system"><option value="">(ninguno — cross-system)</option>${sysOpts}</select></div>
+      <div class="field"><label>Módulo</label><select id="eu-module"><option value="">(ninguno)</option>${modOpts}</select></div>
+      <div class="field"><label>Líder Productivo (mesa)</label><select id="eu-pl"><option value="">(ninguno)</option>${plOpts}</select></div>
+      <p class="hint" style="margin: 0 0 14px;">Cambios manuales — usa con cuidado. Mover entre sistemas/módulos rompe relaciones con su downline.</p>
+      <button class="primary" id="eu-save">Guardar cambios</button>
+    `);
+    $('eu-save').addEventListener('click', async () => {
+      try {
+        await api(`/api/users/${u.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            full_name: $('eu-name').value.trim(),
+            email: $('eu-email').value.trim() || null,
+            phone: $('eu-phone').value.trim() || null,
+            role: $('eu-role').value,
+            system_id: parseInt($('eu-system').value, 10) || null,
+            module_id: parseInt($('eu-module').value, 10) || null,
+            productive_leader_id: parseInt($('eu-pl').value, 10) || null,
+          }),
+        });
+        closeModal(); loadUsers();
+      } catch (e) { alert(e.message); }
+    });
+  }
+
   // ============ USERS ============
   async function loadCachedUsers() {
     const all = await api('/api/users');
@@ -859,14 +940,20 @@
           <td><span class="code-pill">${u.distributor_code}</span></td>
           <td><span class="${blocked ? 'tag red' : ''}">${lastTxt}</span></td>
           <td>${pendingTag}</td>
-          <td>${(me.role === 'system_leader' || me.role === 'module_leader')
+          <td>${me.role === 'lider_supremo' ? `<button class="ghost-btn" data-action="edit-user" data-id="${u.id}" style="margin-right:6px;">Editar</button>` : ''}${(me.role === 'lider_supremo' || me.role === 'system_leader' || me.role === 'module_leader')
             ? `<button class="ghost-btn" data-action="edit-rank" data-id="${u.id}" data-rank="${u.bhip_rank || ''}">Rango</button>
                <button class="ghost-btn" data-action="reset-pwd" data-id="${u.id}" data-name="${u.full_name.replace(/"/g, '&quot;')}" data-email="${u.email || ''}" style="margin-left:6px;">Reset pwd</button>
-               ${me.role === 'system_leader' && u.id !== me.id ? `<button class="ghost-btn" data-action="delete-user" data-id="${u.id}" data-name="${u.full_name.replace(/"/g, '&quot;')}" style="margin-left:6px;color:#FF8B95;border-color:rgba(220,90,100,0.3);">Eliminar</button>` : ''}`
+               ${(me.role === 'lider_supremo' || me.role === 'system_leader') && u.id !== me.id ? `<button class="ghost-btn" data-action="delete-user" data-id="${u.id}" data-name="${u.full_name.replace(/"/g, '&quot;')}" style="margin-left:6px;color:#FF8B95;border-color:rgba(220,90,100,0.3);">Eliminar</button>` : ''}`
             : ''}</td>
         </tr>
       `;
     }).join('');
+    $('users-tbody').querySelectorAll('[data-action=edit-user]').forEach((b) => {
+      b.addEventListener('click', async () => {
+        const r = await api(`/api/users/${b.dataset.id}`);
+        openEditUserModal(r.user);
+      });
+    });
     $('users-tbody').querySelectorAll('[data-action=edit-rank]').forEach((b) => {
       b.addEventListener('click', () => openRankModal(b.dataset.id, b.dataset.rank));
     });

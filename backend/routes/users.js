@@ -199,11 +199,17 @@ router.patch('/:id', requireAuth, (req, res) => {
   if (!target) return res.status(404).json({ error: 'Usuario no encontrado' });
   if (!canActOn(req.user, target)) return res.status(403).json({ error: 'No tienes acceso a este usuario' });
 
-  const { full_name, email, phone, module_id, productive_leader_id, active, password, bhip_rank, system_id } = req.body || {};
+  const { full_name, email, phone, module_id, productive_leader_id, active, password, bhip_rank, system_id, role } = req.body || {};
   const fields = [], values = [];
   if (full_name !== undefined) { fields.push('full_name = ?'); values.push(full_name); }
   if (email !== undefined)     { fields.push('email = ?');     values.push(email ? email.toLowerCase().trim() : null); }
   if (phone !== undefined)     { fields.push('phone = ?');     values.push(phone); }
+  // Solo lider_supremo puede cambiar rol (es cambio de jerarquía).
+  if (role !== undefined && req.user.role === 'lider_supremo') {
+    const validRoles = ['lider_supremo','system_leader','module_leader','productive_leader','distributor'];
+    if (!validRoles.includes(role)) return res.status(400).json({ error: 'Rol inválido' });
+    fields.push('role = ?'); values.push(role);
+  }
   // Solo lider_supremo puede mover usuarios entre sistemas.
   if (system_id !== undefined && req.user.role === 'lider_supremo') {
     fields.push('system_id = ?'); values.push(system_id || null);
