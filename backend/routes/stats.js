@@ -28,10 +28,16 @@ router.get('/kpis', requireAuth, (req, res) => {
   const { from, to, ym } = buildMonthRange(month);
   const scope = scopeUsersClause(req.user, 'u');
 
-  // Filtros adicionales por módulo (solo si el actor lo permite)
-  const moduleFilter = (module_id && (['lider_supremo','system_leader'].includes(req.user.role) || parseInt(module_id, 10) === req.user.module_id))
-    ? { sql: ' AND u.module_id = ?', params: [module_id] }
-    : { sql: '', params: [] };
+  // Filtros adicionales por módulo. Valida que el módulo pertenezca al sistema del actor.
+  let moduleFilter = { sql: '', params: [] };
+  if (module_id) {
+    const m = db.prepare('SELECT system_id FROM modules WHERE id = ?').get(module_id);
+    const allowed =
+      req.user.role === 'lider_supremo' ||
+      (req.user.role === 'system_leader' && m && m.system_id === req.user.system_id) ||
+      parseInt(module_id, 10) === req.user.module_id;
+    if (allowed) moduleFilter = { sql: ' AND u.module_id = ?', params: [module_id] };
+  }
 
   // KPI 1 — Socios Activos del mes (al menos 1 invitado a B.O.M en el mes)
   const activePartners = db.prepare(`
@@ -102,8 +108,13 @@ router.get('/funnel', requireAuth, (req, res) => {
   const extraFilters = [];
   const extraParams = [];
 
-  if (module_id && (['lider_supremo','system_leader'].includes(req.user.role) || parseInt(module_id, 10) === req.user.module_id)) {
-    extraFilters.push('u.module_id = ?'); extraParams.push(module_id);
+  if (module_id) {
+    const m = db.prepare('SELECT system_id FROM modules WHERE id = ?').get(module_id);
+    const allowed =
+      req.user.role === 'lider_supremo' ||
+      (req.user.role === 'system_leader' && m && m.system_id === req.user.system_id) ||
+      parseInt(module_id, 10) === req.user.module_id;
+    if (allowed) { extraFilters.push('u.module_id = ?'); extraParams.push(module_id); }
   }
   if (productive_leader_id) {
     // ML solo puede filtrar por PL de su propio módulo
@@ -181,8 +192,11 @@ router.get('/by-module', requireAuth, (req, res) => {
   const { from, to } = buildMonthRange(month);
 
   let modules;
-  if (req.user.role === 'lider_supremo' || req.user.role === 'system_leader') {
-    modules = db.prepare('SELECT * FROM modules ORDER BY number').all();
+  if (req.user.role === 'lider_supremo') {
+    modules = db.prepare('SELECT * FROM modules ORDER BY system_id, number').all();
+  } else if (req.user.role === 'system_leader') {
+    // SOLO módulos del propio sistema — sin cross-system leak.
+    modules = db.prepare('SELECT * FROM modules WHERE system_id = ? ORDER BY number').all(req.user.system_id);
   } else if (req.user.module_id) {
     modules = db.prepare('SELECT * FROM modules WHERE id = ?').all(req.user.module_id);
   } else {
@@ -227,8 +241,15 @@ router.get('/by-module', requireAuth, (req, res) => {
 router.get('/monthly', requireAuth, (req, res) => {
   const { module_id } = req.query;
   const scope = scopeUsersClause(req.user, 'u');
-  const moduleFilter = (module_id && (['lider_supremo','system_leader'].includes(req.user.role) || parseInt(module_id, 10) === req.user.module_id))
-    ? { sql: ' AND u.module_id = ?', params: [module_id] } : { sql: '', params: [] };
+  let moduleFilter = { sql: '', params: [] };
+  if (module_id) {
+    const m = db.prepare('SELECT system_id FROM modules WHERE id = ?').get(module_id);
+    const allowed =
+      req.user.role === 'lider_supremo' ||
+      (req.user.role === 'system_leader' && m && m.system_id === req.user.system_id) ||
+      parseInt(module_id, 10) === req.user.module_id;
+    if (allowed) moduleFilter = { sql: ' AND u.module_id = ?', params: [module_id] };
+  }
 
   const sql = `
     SELECT strftime('%Y-%m', g.created_at) AS month,
@@ -245,8 +266,15 @@ router.get('/monthly', requireAuth, (req, res) => {
 // ================= COMPARACIÓN SEMANAL Y MENSUAL =================
 router.get('/comparison', requireAuth, (req, res) => {
   const scope = scopeUsersClause(req.user, 'u');
-  const moduleFilter = (req.query.module_id && (['lider_supremo','system_leader'].includes(req.user.role) || parseInt(req.query.module_id, 10) === req.user.module_id))
-    ? { sql: ' AND u.module_id = ?', params: [req.query.module_id] } : { sql: '', params: [] };
+  let moduleFilter = { sql: '', params: [] };
+  if (req.query.module_id) {
+    const m = db.prepare('SELECT system_id FROM modules WHERE id = ?').get(req.query.module_id);
+    const allowed =
+      req.user.role === 'lider_supremo' ||
+      (req.user.role === 'system_leader' && m && m.system_id === req.user.system_id) ||
+      parseInt(req.query.module_id, 10) === req.user.module_id;
+    if (allowed) moduleFilter = { sql: ' AND u.module_id = ?', params: [req.query.module_id] };
+  }
 
   function metricsInRange(from, to) {
     const guests = db.prepare(`

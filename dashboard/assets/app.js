@@ -744,19 +744,41 @@
     const data = await api('/api/modules');
     cachedModules = data.modules;
     populateModuleFilter();
-    $('modules-tbody').innerHTML = data.modules.map((m) => `
-      <tr>
-        <td><strong style="color:var(--gold-400);">M${m.number}</strong></td>
-        <td>${m.name}</td>
-        <td>${m.member_count}</td>
-        <td><span class="tag ${m.active ? 'green' : 'gray'}">${m.active ? 'Activo' : 'Inactivo'}</span></td>
-        <td>${me.role === 'system_leader' ? `<button class="ghost-btn" data-action="toggle-mod" data-id="${m.id}" data-active="${m.active}">${m.active ? 'Desactivar' : 'Reactivar'}</button>` : ''}</td>
-      </tr>
-    `).join('');
+    const canManage = me.role === 'lider_supremo' || me.role === 'system_leader';
+    const showSystemCol = me.role === 'lider_supremo';
+    const sysTh = $('modules-sys-th'); if (sysTh) sysTh.hidden = !showSystemCol;
+    $('modules-tbody').innerHTML = data.modules.map((m) => {
+      const sysCell = showSystemCol ? `<td><span class="muted" style="font-size:12px;">${m.system_name || '—'}</span></td>` : '';
+      const actions = canManage ? `
+        <button class="ghost-btn" data-action="toggle-mod" data-id="${m.id}" data-active="${m.active}">${m.active ? 'Desactivar' : 'Reactivar'}</button>
+        <button class="ghost-btn" data-action="delete-mod" data-id="${m.id}" data-name="${m.name.replace(/"/g, '&quot;')}" style="margin-left:6px;color:#FF8B95;border-color:rgba(220,90,100,0.3);">Eliminar</button>
+      ` : '';
+      return `
+        <tr>
+          <td><strong style="color:var(--gold-400);">M${m.number}</strong></td>
+          <td>${m.name}</td>
+          ${sysCell}
+          <td>${m.member_count}</td>
+          <td><span class="tag ${m.active ? 'green' : 'gray'}">${m.active ? 'Activo' : 'Inactivo'}</span></td>
+          <td>${actions}</td>
+        </tr>
+      `;
+    }).join('');
     $('modules-tbody').querySelectorAll('[data-action=toggle-mod]').forEach((b) => {
       b.addEventListener('click', async () => {
-        await api(`/api/modules/${b.dataset.id}`, { method: 'PATCH', body: JSON.stringify({ active: b.dataset.active !== '1' }) });
-        loadModules();
+        try {
+          await api(`/api/modules/${b.dataset.id}`, { method: 'PATCH', body: JSON.stringify({ active: b.dataset.active !== '1' }) });
+          loadModules();
+        } catch (e) { alert(e.message); }
+      });
+    });
+    $('modules-tbody').querySelectorAll('[data-action=delete-mod]').forEach((b) => {
+      b.addEventListener('click', async () => {
+        if (!confirm(`¿Eliminar el módulo "${b.dataset.name}"? Esta acción no se puede deshacer.`)) return;
+        try {
+          await api(`/api/modules/${b.dataset.id}`, { method: 'DELETE' });
+          loadModules();
+        } catch (e) { alert(e.message); }
       });
     });
   }
@@ -771,21 +793,32 @@
     $('filter-module-wrap').style.display = me.role === 'system_leader' ? '' : 'none';
   }
 
-  $('new-module').addEventListener('click', () => {
+  $('new-module').addEventListener('click', async () => {
+    let systemPicker = '';
+    if (me.role === 'lider_supremo') {
+      // Lider supremo elige a qué sistema asignar el módulo.
+      // Reusamos cachedModules para inferir sistemas conocidos + opción global.
+      const knownSystems = {};
+      cachedModules.forEach((m) => { if (m.system_id) knownSystems[m.system_id] = m.system_name || `Sistema ${m.system_id}`; });
+      const sysOpts = Object.entries(knownSystems).map(([id, name]) => `<option value="${id}">${name}</option>`).join('');
+      systemPicker = `<div class="field"><label>Sistema</label><select id="new-mod-system">${sysOpts}</select></div>`;
+    }
     openModal('Nuevo módulo', `
-      <div class="field"><label>Número</label><input type="number" id="new-mod-number" /></div>
+      <div class="field"><label>Número</label><input type="number" inputmode="numeric" id="new-mod-number" /></div>
       <div class="field"><label>Nombre</label><input type="text" id="new-mod-name" /></div>
+      ${systemPicker}
       <button class="primary" id="save-module">Crear</button>
     `);
     $('save-module').addEventListener('click', async () => {
       try {
-        await api('/api/modules', {
-          method: 'POST',
-          body: JSON.stringify({
-            number: parseInt($('new-mod-number').value, 10),
-            name: $('new-mod-name').value,
-          }),
-        });
+        const body = {
+          number: parseInt($('new-mod-number').value, 10),
+          name: $('new-mod-name').value,
+        };
+        if (me.role === 'lider_supremo' && $('new-mod-system')) {
+          body.system_id = parseInt($('new-mod-system').value, 10) || null;
+        }
+        await api('/api/modules', { method: 'POST', body: JSON.stringify(body) });
         closeModal(); loadModules();
       } catch (err) { alert(err.message); }
     });

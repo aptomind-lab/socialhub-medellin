@@ -17,7 +17,7 @@ if (sysCount === 0) {
 // ── Módulos ──
 const moduleCount = db.prepare('SELECT COUNT(*) AS c FROM modules').get().c;
 if (moduleCount === 0) {
-  const insert = db.prepare('INSERT INTO modules (number, name) VALUES (?, ?)');
+  const insert = db.prepare('INSERT INTO modules (number, name, system_id) VALUES (?, ?, 1)');
   db.transaction(() => {
     insert.run(3,  'Módulo 3');
     insert.run(5,  'Módulo 5');

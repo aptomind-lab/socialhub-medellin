@@ -141,7 +141,10 @@ router.get('/role-breakdown', requireAuth, (req, res) => {
   }
 
   if (role === 'system_leader') {
-    const modules = db.prepare('SELECT id, number, name FROM modules WHERE active=1 ORDER BY number').all();
+    // Solo módulos del PROPIO sistema — nada cross-system.
+    const modules = db.prepare(
+      'SELECT id, number, name FROM modules WHERE active=1 AND system_id = ? ORDER BY number'
+    ).all(req.user.system_id);
     const rows = modules.map((m) => {
       const r = db.prepare(`
         SELECT

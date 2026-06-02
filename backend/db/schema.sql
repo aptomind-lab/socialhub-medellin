@@ -14,8 +14,10 @@ CREATE TABLE IF NOT EXISTS modules (
   number       INTEGER NOT NULL UNIQUE,
   name         TEXT    NOT NULL,
   active       INTEGER NOT NULL DEFAULT 1,
+  system_id    INTEGER REFERENCES systems(id) ON DELETE SET NULL,
   created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
 );
+CREATE INDEX IF NOT EXISTS idx_modules_system_id ON modules(system_id);
 
 -- Una sola tabla para todos los roles. La jerarquía se modela con FKs:
 --   role = 'system_leader'      → ve toda la oficina
