@@ -1126,17 +1126,19 @@
 
       return `
         <tr>
-          <td><strong>${g.full_name}</strong><div class="muted" style="font-size:12px;">${g.email}</div></td>
+          <td><strong>${g.full_name}</strong><div class="muted" style="font-size:12px;">${g.email || '—'}</div></td>
+          <td><span class="muted" style="font-size:12px;">${g.phone || '—'}</span></td>
           <td>${g.distributor_name}</td>
           <td>${g.module_number ? `M${g.module_number}` : '—'}</td>
           <td>${stageTag}</td>
           <td>${colorChip(g.color, g.color_manual)}</td>
+          <td class="muted" style="font-size:12px;">${(g.created_at || '').slice(0, 10)}</td>
           <td>${bitCell(g)}</td>
           <td>${wgCell}</td>
           <td>${actions}</td>
         </tr>
       `;
-    }).join('') : '<tr><td colspan="8" class="muted">Sin invitados.</td></tr>';
+    }).join('') : '<tr><td colspan="10" class="muted">Sin invitados.</td></tr>';
 
     $('guests-tbody').querySelectorAll('[data-action=mark-signed]').forEach((b) => {
       b.addEventListener('click', () => openSignModal(b.dataset.id, b.dataset.name));
