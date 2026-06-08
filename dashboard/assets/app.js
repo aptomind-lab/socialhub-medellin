@@ -1109,10 +1109,10 @@
         ? `<span class="tag green">✦ ${stageLabels[g.current_stage] || g.current_stage}</span>`
         : `<span class="tag gold">${stageLabels[g.current_stage] || g.current_stage}</span>`;
       const wgInfo = wgByGuest[g.id] || { status: 'none' };
-      const wgBadge = WG_BADGE[wgInfo.status];
-      const wgCell = wgInfo.status === 'none'
+      const wgBadge = WG_BADGE[wgInfo.status] || WG_BADGE.none;
+      const wgCell = (!wgInfo.status || wgInfo.status === 'none')
         ? `<span class="muted" style="font-size:11px;">—</span>`
-        : `<span class="tag ${wgBadge.tag}" title="${wgInfo.total_weeks} sem · máx consec: ${wgInfo.max_consecutive_weeks}">${wgBadge.icon} ${wgBadge.label}</span>`;
+        : `<span class="tag ${wgBadge.tag}" title="${wgInfo.total_weeks || 0} sem · máx consec: ${wgInfo.max_consecutive_weeks || 0}">${wgBadge.icon} ${wgBadge.label}</span>`;
 
       let actions = '';
       if (isSigned) {
