@@ -134,20 +134,11 @@
       <header class="topbar">
         <button id="menu-toggle" class="menu-toggle" aria-label="Abrir menú">☰</button>
         <div class="filters">
-          <div class="filter">
-            <label>Mes</label>
-            <input type="month" id="filter-month" />
-          </div>
           <div class="filter" id="filter-module-wrap">
             <label>Módulo</label>
-            <select id="filter-module"><option value="">Todos</option></select>
+            <select id="filter-module" onchange="if(window._shApplyFilters)window._shApplyFilters();"><option value="">Todos</option></select>
           </div>
-          <button id="apply-filters" class="primary sm">Aplicar</button>
         </div>
-        <button id="open-daily-log" class="ghost-btn" style="display:flex;align-items:center;gap:8px;" title="Registrar mi actividad de hoy">
-          <span style="font-size:14px;">✎</span>
-          <span id="daily-log-summary">Registrar actividad</span>
-        </button>
         <div id="streak-badge" class="streak-badge" hidden title="Tu racha actual">
           <span class="streak-icon">🔥</span>
           <span id="streak-count">0</span>
@@ -398,8 +389,9 @@
               <h3>Mensajes tradicionales</h3>
               <span class="tag gold" style="font-size:10px;">Tipo A</span>
             </header>
-            <form id="msg-form" class="form-row" style="grid-template-columns: 1fr 1fr auto; gap:12px;">
+            <form id="msg-form" class="form-row" style="grid-template-columns: 1fr 1fr 1fr auto; gap:12px;">
               <div class="field"><label>Mensajes enviados</label><input type="number" inputmode="numeric" id="msg-count" min="0" placeholder="0" /></div>
+              <div class="field"><label>Leads generados</label><input type="number" inputmode="numeric" id="msg-leads" min="0" value="0" /></div>
               <div class="field"><label>Books del día</label><input type="number" inputmode="numeric" id="msg-books" min="0" value="0" /></div>
               <button class="primary sm" type="submit">Guardar</button>
             </form>
@@ -411,9 +403,10 @@
               <h3>TikTok Live</h3>
               <span class="tag" style="background:rgba(255,0,80,0.15);color:#FF6B95;border:1px solid rgba(255,0,80,0.3);font-size:10px;">Tipo B</span>
             </header>
-            <form id="tiktok-form" class="form-row" style="grid-template-columns: 1fr 1fr auto; gap:12px;">
+            <form id="tiktok-form" class="form-row" style="grid-template-columns: 1fr 1fr 1fr auto; gap:12px;">
               <div class="field"><label>Minutos en live</label><input type="number" inputmode="numeric" id="tt-minutes" min="0" placeholder="0" /></div>
               <div class="field"><label>Leads generados</label><input type="number" inputmode="numeric" id="tt-leads" min="0" placeholder="0" /></div>
+              <div class="field"><label>Books cerrados</label><input type="number" inputmode="numeric" id="tt-books" min="0" placeholder="0" /></div>
               <button class="primary sm" type="submit">Guardar</button>
             </form>
             <div class="hint">Se registra para la misma fecha del bloque superior. Si solo hiciste TikTok ese día, guarda solo este form.</div>
@@ -422,7 +415,7 @@
         <article class="panel">
           <header class="panel-head"><h3>Totales por usuario</h3></header>
           <div class="table-wrap"><table class="table">
-            <thead><tr><th>Nombre</th><th>Rol</th><th>Mód</th><th>Mensajes</th><th>Books</th><th>TikTok min</th><th>TikTok leads</th><th>Días</th></tr></thead>
+            <thead><tr><th>Nombre</th><th>Rol</th><th>Mód</th><th>Mensajes</th><th>Msg leads</th><th>Books msg</th><th>TT min</th><th>TT leads</th><th>TT books</th><th>Días</th></tr></thead>
             <tbody id="msg-totals"></tbody>
           </table></div>
           <div class="hint">Todos los totales se actualizan automáticamente con cada registro diario. No editables desde esta tabla.</div>

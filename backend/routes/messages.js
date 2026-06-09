@@ -18,7 +18,7 @@ function clampInt(v, def = 0) {
 // Acepta tanto los nombres nuevos (messages, books, tiktok_minutes, tiktok_leads)
 // como los nombres viejos (count, books_count) para retro-compat.
 router.post('/', requireAuth, (req, res) => {
-  let { user_id, date, count, books_count, messages, books, tiktok_minutes, tiktok_leads } = req.body || {};
+  let { user_id, date, count, books_count, messages, books, tiktok_minutes, tiktok_leads, messages_leads, tiktok_books } = req.body || {};
   if (!user_id) user_id = req.user.id;
   if (!date) return res.status(400).json({ error: 'date es requerido' });
 
@@ -34,9 +34,9 @@ router.post('/', requireAuth, (req, res) => {
 
   // Carga la fila existente para preservar campos no enviados.
   const existing = db.prepare(`
-    SELECT messages, books, tiktok_minutes, tiktok_leads FROM daily_activity
+    SELECT messages, books, tiktok_minutes, tiktok_leads, messages_leads, tiktok_books FROM daily_activity
     WHERE user_id = ? AND date = ?
-  `).get(user_id, date) || { messages: 0, books: 0, tiktok_minutes: 0, tiktok_leads: 0 };
+  `).get(user_id, date) || { messages: 0, books: 0, tiktok_minutes: 0, tiktok_leads: 0, messages_leads: 0, tiktok_books: 0 };
 
   // Resuelve valores finales: nuevo > viejo > existente.
   const fMessages       = messages       !== undefined ? clampInt(messages, 0)
@@ -47,17 +47,21 @@ router.post('/', requireAuth, (req, res) => {
                         : existing.books;
   const fTiktokMinutes  = tiktok_minutes !== undefined ? clampInt(tiktok_minutes, 0) : existing.tiktok_minutes;
   const fTiktokLeads    = tiktok_leads   !== undefined ? clampInt(tiktok_leads, 0)   : existing.tiktok_leads;
+  const fMessagesLeads  = messages_leads !== undefined ? clampInt(messages_leads, 0) : existing.messages_leads;
+  const fTiktokBooks    = tiktok_books   !== undefined ? clampInt(tiktok_books, 0)   : existing.tiktok_books;
 
   db.prepare(`
-    INSERT INTO daily_activity (user_id, date, messages, books, tiktok_minutes, tiktok_leads)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO daily_activity (user_id, date, messages, books, tiktok_minutes, tiktok_leads, messages_leads, tiktok_books)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(user_id, date) DO UPDATE SET
       messages       = excluded.messages,
       books          = excluded.books,
       tiktok_minutes = excluded.tiktok_minutes,
       tiktok_leads   = excluded.tiktok_leads,
+      messages_leads = excluded.messages_leads,
+      tiktok_books   = excluded.tiktok_books,
       updated_at     = datetime('now')
-  `).run(user_id, date, fMessages, fBooks, fTiktokMinutes, fTiktokLeads);
+  `).run(user_id, date, fMessages, fBooks, fTiktokMinutes, fTiktokLeads, fMessagesLeads, fTiktokBooks);
 
   const status = refreshUserBlock(user_id);
 
@@ -78,7 +82,7 @@ router.post('/', requireAuth, (req, res) => {
 router.get('/today', requireAuth, (req, res) => {
   const today = new Date().toISOString().slice(0, 10);
   const row = db.prepare(`
-    SELECT date, messages, books, tiktok_minutes, tiktok_leads, created_at, updated_at
+    SELECT date, messages, books, tiktok_minutes, tiktok_leads, messages_leads, tiktok_books, created_at, updated_at
     FROM daily_activity WHERE user_id = ? AND date = ?
   `).get(req.user.id, today);
   // Mantenemos compat con clientes que esperan count/books_count.
@@ -91,7 +95,7 @@ router.get('/today', requireAuth, (req, res) => {
 
 router.get('/user/:userId', requireAuth, (req, res) => {
   const rows = db.prepare(`
-    SELECT date, messages, books, tiktok_minutes, tiktok_leads, created_at
+    SELECT date, messages, books, tiktok_minutes, tiktok_leads, messages_leads, tiktok_books, created_at
     FROM daily_activity WHERE user_id = ? ORDER BY date DESC LIMIT 90
   `).all(req.params.userId);
   // Compat: emitir también count/books_count.
@@ -109,6 +113,8 @@ router.get('/totals', requireAuth, (req, res) => {
            IFNULL(SUM(a.books), 0)          AS total_books,
            IFNULL(SUM(a.tiktok_minutes), 0) AS total_tiktok_minutes,
            IFNULL(SUM(a.tiktok_leads), 0)   AS total_tiktok_leads,
+           IFNULL(SUM(a.messages_leads), 0) AS total_messages_leads,
+           IFNULL(SUM(a.tiktok_books), 0)   AS total_tiktok_books,
            COUNT(a.id) AS days_logged
     FROM users u
     LEFT JOIN modules m ON m.id = u.module_id

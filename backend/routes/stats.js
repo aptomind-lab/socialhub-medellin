@@ -164,23 +164,32 @@ router.get('/funnel', requireAuth, (req, res) => {
     return { stage: s, label: STAGE_LABELS[s], count, conversion_from_previous_pct: conversion_pct };
   });
 
-  // INPUTS: mensajes y TikTok leads → books (Book = REGISTRO en el embudo).
-  // Books generados por los usuarios visibles en el rango.
-  const booksRow = db.prepare(`
-    SELECT IFNULL(SUM(a.messages), 0) AS m, IFNULL(SUM(a.tiktok_leads), 0) AS t,
-           IFNULL(SUM(a.books), 0) AS b
+  // INPUTS — Embudo dual con fuentes separadas:
+  //   Tipo A: mensajes → books (columna `books`)
+  //   Tipo B: tiktok_leads → tiktok_books (columna `tiktok_books`)
+  // NUNCA se cruzan ni se duplican.
+  const inputsRow = db.prepare(`
+    SELECT IFNULL(SUM(a.messages), 0)       AS messages,
+           IFNULL(SUM(a.books), 0)          AS books_messages,
+           IFNULL(SUM(a.tiktok_leads), 0)   AS tiktok_leads,
+           IFNULL(SUM(a.tiktok_books), 0)   AS books_tiktok
     FROM daily_activity a
     JOIN users u ON u.id = a.user_id
     WHERE a.date BETWEEN ? AND ? ${scope.sql} ${extraSql}
   `).get(from, to, ...scope.params, ...extraParams);
 
-  const inputMessages   = booksRow.m;
-  const inputTiktokLeads = booksRow.t;
-  const totalBooks      = booksRow.b;
   const inputs = {
-    messages:     { count: inputMessages,    to_books_pct: inputMessages   > 0 ? Math.round((totalBooks / inputMessages)   * 1000) / 10 : 0 },
-    tiktok_leads: { count: inputTiktokLeads, to_books_pct: inputTiktokLeads > 0 ? Math.round((totalBooks / inputTiktokLeads) * 1000) / 10 : 0 },
-    books_total:  totalBooks,
+    messages: {
+      count: inputsRow.messages,
+      books: inputsRow.books_messages,
+      to_books_pct: inputsRow.messages > 0 ? Math.round((inputsRow.books_messages / inputsRow.messages) * 1000) / 10 : 0,
+    },
+    tiktok_leads: {
+      count: inputsRow.tiktok_leads,
+      books: inputsRow.books_tiktok,
+      to_books_pct: inputsRow.tiktok_leads > 0 ? Math.round((inputsRow.books_tiktok / inputsRow.tiktok_leads) * 1000) / 10 : 0,
+    },
+    books_total: inputsRow.books_messages + inputsRow.books_tiktok,
   };
 
   res.json({ range: { from, to }, inputs, funnel });

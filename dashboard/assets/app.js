@@ -395,14 +395,14 @@
     return `<span class="tag ${cls}" title="${g.bit_date}">${days}d</span>`;
   }
 
-  $('apply-filters').addEventListener('click', () => {
+  // Mantengo hook global por si algún select dispara recarga (ej. filtro módulo)
+  window._shApplyFilters = function () {
     const active = $$('.view.active')[0];
     if (active) loadView(active.dataset.view);
-  });
+  };
 
   function getFilters() {
     return {
-      month: $('filter-month').value || undefined,
       module_id: $('filter-module').value || undefined,
     };
   }
@@ -517,15 +517,15 @@
         <div class="overline">Entradas al embudo</div>
         <div class="funnel-inputs-grid">
           <div class="funnel-input-card">
-            <div class="funnel-input-label">Mensajes enviados</div>
+            <div class="funnel-input-label">Mensajes (Tipo A)</div>
             <div class="funnel-input-count">${inp.messages?.count ?? 0}</div>
-            <div class="funnel-input-conv">→ <strong>${inp.books_total ?? 0} books</strong></div>
+            <div class="funnel-input-conv">→ <strong>${inp.messages?.books ?? 0} books</strong></div>
             <div class="funnel-convo ${(inp.messages?.to_books_pct || 0) >= 5 ? 'good' : (inp.messages?.to_books_pct || 0) >= 1 ? 'mid' : 'low'}">${inp.messages?.to_books_pct ?? 0}%</div>
           </div>
           <div class="funnel-input-card tiktok">
-            <div class="funnel-input-label">TikTok leads</div>
+            <div class="funnel-input-label">TikTok leads (Tipo B)</div>
             <div class="funnel-input-count">${inp.tiktok_leads?.count ?? 0}</div>
-            <div class="funnel-input-conv">→ <strong>${inp.books_total ?? 0} books</strong></div>
+            <div class="funnel-input-conv">→ <strong>${inp.tiktok_leads?.books ?? 0} books</strong></div>
             <div class="funnel-convo ${(inp.tiktok_leads?.to_books_pct || 0) >= 25 ? 'good' : (inp.tiktok_leads?.to_books_pct || 0) >= 10 ? 'mid' : 'low'}">${inp.tiktok_leads?.to_books_pct ?? 0}%</div>
           </div>
         </div>
@@ -1244,13 +1244,15 @@
             <td><span class="muted" style="font-size:11px;">${ROLE_SHORT[r.role] || r.role}</span></td>
             <td>${r.module_number ? `M${r.module_number}` : '—'}</td>
             <td><strong>${r.total_messages}</strong></td>
+            <td>${r.total_messages_leads || 0}</td>
             <td><strong style="color:var(--teal-400);">${r.total_books || 0}</strong></td>
             <td>${r.total_tiktok_minutes || 0}</td>
-            <td><strong style="color:#FF6B95;">${r.total_tiktok_leads || 0}</strong></td>
+            <td>${r.total_tiktok_leads || 0}</td>
+            <td><strong style="color:#FF6B95;">${r.total_tiktok_books || 0}</strong></td>
             <td>${r.days_logged}</td>
           </tr>
         `).join('')
-      : '<tr><td colspan="8" class="muted">Sin registros aún.</td></tr>';
+      : '<tr><td colspan="10" class="muted">Sin registros aún.</td></tr>';
   }
 
   // Pre-llena AMBOS forms (mensajes + tiktok) con el registro existente del usuario+fecha.
@@ -1263,8 +1265,10 @@
       const found = (r.messages || []).find((m) => m.date === date);
       $('msg-count').value = found ? found.count : '';
       $('msg-books').value = found ? (found.books || found.books_count || 0) : 0;
+      if ($('msg-leads')) $('msg-leads').value = found ? (found.messages_leads || 0) : 0;
       if ($('tt-minutes')) $('tt-minutes').value = found ? (found.tiktok_minutes || 0) : 0;
       if ($('tt-leads'))   $('tt-leads').value   = found ? (found.tiktok_leads   || 0) : 0;
+      if ($('tt-books'))   $('tt-books').value   = found ? (found.tiktok_books   || 0) : 0;
     } catch (e) { /* silent */ }
   }
   document.addEventListener('change', (e) => {
@@ -1281,10 +1285,10 @@
           date: $('msg-date').value,
           messages: parseInt($('msg-count').value, 10) || 0,
           books: parseInt($('msg-books').value, 10) || 0,
+          messages_leads: parseInt(($('msg-leads')||{}).value, 10) || 0,
         }),
       });
       loadMessages();
-      refreshDailySummary();
     } catch (err) { alert(err.message); }
   });
 
@@ -1300,10 +1304,10 @@
             date: $('msg-date').value,
             tiktok_minutes: parseInt($('tt-minutes').value, 10) || 0,
             tiktok_leads:   parseInt($('tt-leads').value, 10) || 0,
+            tiktok_books:   parseInt(($('tt-books')||{}).value, 10) || 0,
           }),
         });
         loadMessages();
-        refreshDailySummary();
       } catch (err) { alert(err.message); }
     });
   }
@@ -1753,9 +1757,6 @@
       // Si el rol no es productive_leader/module_leader/system_leader, quitar la vista de team
       // pero distributor no llega aquí (no tiene login normalmente)
 
-      const now = new Date();
-      $('filter-month').value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-
       const eventsData = await api('/api/events');
       stageLabels = eventsData.stage_labels;
       scannableStages = eventsData.scannable_stages;
@@ -1764,7 +1765,6 @@
       showScreen('app');
       loadOverview();
       refreshAlertBadge();
-      refreshDailySummary();
       refreshStreakBadge();
       // Auto-refresh del badge cada 60s
       if (window._shBadgeTimer) clearInterval(window._shBadgeTimer);
@@ -1781,50 +1781,4 @@
     showScreen('login');
   }
 
-  // ============ WIDGET REGISTRO DIARIO ============
-  const dailyBtn = $('open-daily-log');
-  if (dailyBtn) {
-    dailyBtn.addEventListener('click', openDailyLogModal);
-  }
-
-  async function openDailyLogModal() {
-    let today;
-    try {
-      const r = await api('/api/messages/today');
-      today = r;
-    } catch (e) { return alert(e.message); }
-    const existing = today.record || { count: '', books_count: '' };
-    openModal('Registrar mi actividad de hoy', `
-      <div class="field"><label>Fecha</label><input type="date" id="dl-date" value="${today.date}" disabled /></div>
-      <div class="field"><label>Mensajes enviados hoy</label><input type="number" inputmode="numeric" id="dl-msgs" min="0" value="${existing.count ?? ''}" placeholder="0" required /></div>
-      <div class="field"><label>Books generados hoy (puede ser 0)</label><input type="number" inputmode="numeric" id="dl-books" min="0" value="${existing.books_count ?? 0}" required /></div>
-      <p class="hint" style="margin: 0 0 14px;">Si no registras mensajes en 48 horas tu código se bloquea automáticamente. Books pueden ser 0.</p>
-      <button class="primary" id="dl-save">${existing.count !== '' ? 'Actualizar' : 'Guardar'}</button>
-    `);
-    $('dl-save').addEventListener('click', async () => {
-      try {
-        await api('/api/messages', {
-          method: 'POST',
-          body: JSON.stringify({
-            date: today.date,
-            count: parseInt($('dl-msgs').value, 10),
-            books_count: parseInt($('dl-books').value, 10) || 0,
-          }),
-        });
-        closeModal();
-        await refreshDailySummary();
-      } catch (err) { alert(err.message); }
-    });
-  }
-
-  async function refreshDailySummary() {
-    try {
-      const r = await api('/api/messages/today');
-      if (r.record) {
-        $('daily-log-summary').textContent = `Hoy: ${r.record.count} msgs · ${r.record.books_count} books`;
-      } else {
-        $('daily-log-summary').textContent = 'Registrar actividad';
-      }
-    } catch (e) { /* silent */ }
-  }
 })();
