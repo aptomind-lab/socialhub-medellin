@@ -24,11 +24,11 @@ function buildWeekRange(weekOffset = 0) {
 
 // ================= KPIs PRINCIPALES =================
 router.get('/kpis', requireAuth, (req, res) => {
-  const { module_id, month } = req.query;
+  const { module_id, system_id, month } = req.query;
   const { from, to, ym } = buildMonthRange(month);
   const scope = scopeUsersClause(req.user, 'u');
 
-  // Filtros adicionales por módulo. Valida que el módulo pertenezca al sistema del actor.
+  // Filtro módulo (con validación de sistema)
   let moduleFilter = { sql: '', params: [] };
   if (module_id) {
     const m = db.prepare('SELECT system_id FROM modules WHERE id = ?').get(module_id);
@@ -38,49 +38,75 @@ router.get('/kpis', requireAuth, (req, res) => {
       parseInt(module_id, 10) === req.user.module_id;
     if (allowed) moduleFilter = { sql: ' AND u.module_id = ?', params: [module_id] };
   }
+  // Filtro system (solo lider_supremo puede elegir; otros heredan via scope)
+  let systemFilter = { sql: '', params: [] };
+  if (system_id && req.user.role === 'lider_supremo') {
+    systemFilter = { sql: ' AND u.system_id = ?', params: [system_id] };
+  }
+  const extra = moduleFilter.sql + systemFilter.sql;
+  const extraP = [...moduleFilter.params, ...systemFilter.params];
 
-  // KPI 1 — Socios Activos del mes (al menos 1 invitado a B.O.M en el mes)
+  // KPI 1 — Socios Activos: usuarios con ≥2 días CONSECUTIVOS de actividad este mes (cualquier rol)
   const activePartners = db.prepare(`
-    SELECT COUNT(DISTINCT g.distributor_id) AS c
-    FROM guests g
-    JOIN users u ON u.id = g.distributor_id
-    JOIN stage_history h ON h.guest_id = g.id AND h.to_stage = 'BOM'
-    WHERE date(h.scanned_at) BETWEEN ? AND ?
-    ${scope.sql} ${moduleFilter.sql}
-  `).get(from, to, ...scope.params, ...moduleFilter.params).c;
+    SELECT COUNT(DISTINCT a1.user_id) AS c
+    FROM daily_activity a1
+    JOIN daily_activity a2 ON a2.user_id = a1.user_id
+      AND date(a2.date) = date(a1.date, '+1 day')
+    JOIN users u ON u.id = a1.user_id
+    WHERE a1.date BETWEEN ? AND ? AND a2.date BETWEEN ? AND ?
+    ${scope.sql} ${extra}
+  `).get(from, to, from, to, ...scope.params, ...extraP).c;
 
-  // Total mensajes (mes)
+  // Total mensajes (mes) + count usuarios activos
   const totalMessages = db.prepare(`
     SELECT IFNULL(SUM(dm.messages), 0) AS total
     FROM daily_activity dm
     JOIN users u ON u.id = dm.user_id
     WHERE dm.date BETWEEN ? AND ?
-    ${scope.sql} ${moduleFilter.sql}
-  `).get(from, to, ...scope.params, ...moduleFilter.params).total;
+    ${scope.sql} ${extra}
+  `).get(from, to, ...scope.params, ...extraP).total;
 
-  // Firmados (FIRMADO en el mes)
-  const signedCount = db.prepare(`
-    SELECT COUNT(*) AS c
-    FROM stage_history h
-    JOIN guests g ON g.id = h.guest_id
-    JOIN users u ON u.id = g.distributor_id
-    WHERE h.to_stage = 'FIRMADO' AND date(h.scanned_at) BETWEEN ? AND ?
-    ${scope.sql} ${moduleFilter.sql}
-  `).get(from, to, ...scope.params, ...moduleFilter.params).c;
+  const activeUsers = db.prepare(`
+    SELECT COUNT(DISTINCT dm.user_id) AS c
+    FROM daily_activity dm
+    JOIN users u ON u.id = dm.user_id
+    WHERE dm.date BETWEEN ? AND ? AND (dm.messages > 0 OR dm.tiktok_minutes > 0)
+    ${scope.sql} ${extra}
+  `).get(from, to, ...scope.params, ...extraP).c;
 
-  const messagesPerSign = signedCount > 0 ? Math.round((totalMessages / signedCount) * 10) / 10 : null;
+  // KPI 2 — Promedio mensajes por usuario activo este mes
+  const messagesPerActive = activeUsers > 0 ? Math.round((totalMessages / activeUsers) * 10) / 10 : 0;
 
-  // BIT count (mes)
-  const bitCount = db.prepare(`
+  // KPI 3 — Conversión BIT→Firmado: invitados que pasaron por BIT este mes Y firmaron este mes / total BIT este mes
+  const bitGuests = db.prepare(`
     SELECT COUNT(DISTINCT h.guest_id) AS c
     FROM stage_history h
     JOIN guests g ON g.id = h.guest_id
     JOIN users u ON u.id = g.distributor_id
     WHERE h.to_stage = 'BIT' AND date(h.scanned_at) BETWEEN ? AND ?
-    ${scope.sql} ${moduleFilter.sql}
-  `).get(from, to, ...scope.params, ...moduleFilter.params).c;
+    ${scope.sql} ${extra}
+  `).get(from, to, ...scope.params, ...extraP).c;
 
-  const bitToSignedConversion = bitCount > 0 ? Math.round((signedCount / bitCount) * 1000) / 10 : 0;
+  const bitAndSigned = db.prepare(`
+    SELECT COUNT(DISTINCT h_bit.guest_id) AS c
+    FROM stage_history h_bit
+    JOIN stage_history h_sig ON h_sig.guest_id = h_bit.guest_id AND h_sig.to_stage = 'FIRMADO'
+      AND date(h_sig.scanned_at) BETWEEN ? AND ?
+    JOIN guests g ON g.id = h_bit.guest_id
+    JOIN users u ON u.id = g.distributor_id
+    WHERE h_bit.to_stage = 'BIT' AND date(h_bit.scanned_at) BETWEEN ? AND ?
+    ${scope.sql} ${extra}
+  `).get(from, to, from, to, ...scope.params, ...extraP).c;
+
+  const bitToSignedConversion = bitGuests > 0 ? Math.round((bitAndSigned / bitGuests) * 1000) / 10 : 0;
+
+  const signedCount = db.prepare(`
+    SELECT COUNT(*) AS c FROM stage_history h
+    JOIN guests g ON g.id = h.guest_id
+    JOIN users u ON u.id = g.distributor_id
+    WHERE h.to_stage = 'FIRMADO' AND date(h.scanned_at) BETWEEN ? AND ?
+    ${scope.sql} ${extra}
+  `).get(from, to, ...scope.params, ...extraP).c;
 
   res.json({
     period: ym,
@@ -88,10 +114,11 @@ router.get('/kpis', requireAuth, (req, res) => {
     actor_role: req.user.role,
     kpis: {
       active_partners: activePartners,
-      messages_per_signed: messagesPerSign,
+      messages_per_active: messagesPerActive,
+      active_users: activeUsers,
       total_messages: totalMessages,
       total_signed: signedCount,
-      total_bit: bitCount,
+      total_bit: bitGuests,
       bit_to_signed_pct: bitToSignedConversion,
     },
   });
@@ -248,8 +275,11 @@ router.get('/by-module', requireAuth, (req, res) => {
 
 // ================= SERIE MENSUAL =================
 router.get('/monthly', requireAuth, (req, res) => {
-  const { module_id } = req.query;
+  // Devuelve series DIARIA del mes actual: por día, # invitados nuevos + # firmas.
+  const { module_id, system_id, month } = req.query;
+  const { from, to } = buildMonthRange(month);
   const scope = scopeUsersClause(req.user, 'u');
+
   let moduleFilter = { sql: '', params: [] };
   if (module_id) {
     const m = db.prepare('SELECT system_id FROM modules WHERE id = ?').get(module_id);
@@ -259,17 +289,44 @@ router.get('/monthly', requireAuth, (req, res) => {
       parseInt(module_id, 10) === req.user.module_id;
     if (allowed) moduleFilter = { sql: ' AND u.module_id = ?', params: [module_id] };
   }
+  let systemFilter = { sql: '', params: [] };
+  if (system_id && req.user.role === 'lider_supremo') {
+    systemFilter = { sql: ' AND u.system_id = ?', params: [system_id] };
+  }
+  const extra = moduleFilter.sql + systemFilter.sql;
+  const extraP = [...moduleFilter.params, ...systemFilter.params];
 
-  const sql = `
-    SELECT strftime('%Y-%m', g.created_at) AS month,
-      COUNT(*) AS guests,
-      SUM(CASE WHEN g.current_stage = 'FIRMADO' THEN 1 ELSE 0 END) AS signed
+  // Invitados creados por día
+  const guestsByDay = db.prepare(`
+    SELECT date(g.created_at) AS d, COUNT(*) AS c
     FROM guests g
     JOIN users u ON u.id = g.distributor_id
-    WHERE 1=1 ${scope.sql} ${moduleFilter.sql}
-    GROUP BY month ORDER BY month ASC LIMIT 24
-  `;
-  res.json({ monthly: db.prepare(sql).all(...scope.params, ...moduleFilter.params) });
+    WHERE date(g.created_at) BETWEEN ? AND ? ${scope.sql} ${extra}
+    GROUP BY d
+  `).all(from, to, ...scope.params, ...extraP);
+
+  // Firmas por día (stage_history → FIRMADO)
+  const signedByDay = db.prepare(`
+    SELECT date(h.scanned_at) AS d, COUNT(*) AS c
+    FROM stage_history h
+    JOIN guests g ON g.id = h.guest_id
+    JOIN users u ON u.id = g.distributor_id
+    WHERE h.to_stage = 'FIRMADO' AND date(h.scanned_at) BETWEEN ? AND ? ${scope.sql} ${extra}
+    GROUP BY d
+  `).all(from, to, ...scope.params, ...extraP);
+
+  const guestsMap = Object.fromEntries(guestsByDay.map((r) => [r.d, r.c]));
+  const signedMap = Object.fromEntries(signedByDay.map((r) => [r.d, r.c]));
+
+  // Construir array con TODOS los días del rango (incluye días con 0)
+  const out = [];
+  const start = new Date(from + 'T00:00:00Z');
+  const end = new Date(to + 'T00:00:00Z');
+  for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+    const k = d.toISOString().slice(0, 10);
+    out.push({ day: k, guests: guestsMap[k] || 0, signed: signedMap[k] || 0 });
+  }
+  res.json({ monthly: out });
 });
 
 // ================= COMPARACIÓN SEMANAL Y MENSUAL =================

@@ -421,7 +421,7 @@
         me.role === 'system_leader' ? api('/api/stats/by-module' + qs({ month: f.month })) : Promise.resolve({ modules: [] }),
       ]);
       $('kpi-active').textContent = kpis.kpis.active_partners;
-      $('kpi-msgs').textContent = kpis.kpis.messages_per_signed ?? '—';
+      $('kpi-msgs').textContent = kpis.kpis.messages_per_active ?? kpis.kpis.messages_per_signed ?? '—';
       $('kpi-conv').textContent = (kpis.kpis.bit_to_signed_pct ?? 0) + '%';
       drawMonthly(monthly.monthly);
       if (me.role === 'system_leader') {
@@ -439,7 +439,7 @@
     charts.monthly = new Chart(ctx, {
       type: 'line',
       data: {
-        labels: rows.map((r) => r.month),
+        labels: rows.map((r) => (r.day || r.month || '').slice(8) || (r.day || r.month)),
         datasets: [
           { label: 'Invitados', data: rows.map((r) => r.guests), borderColor: '#46B0A8', backgroundColor: 'rgba(70, 176, 168, 0.10)', tension: 0.3, fill: true, borderWidth: 2 },
           { label: 'Firmados', data: rows.map((r) => r.signed), borderColor: '#D9B871', backgroundColor: 'rgba(217, 184, 113, 0.10)', tension: 0.3, fill: true, borderWidth: 2 },
