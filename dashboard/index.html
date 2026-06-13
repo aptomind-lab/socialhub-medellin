@@ -351,7 +351,12 @@
             <h3>Embudo individual</h3>
             <input id="guest-search" type="text" placeholder="Buscar por nombre, correo o teléfono..." class="search" />
           </header>
-          <div class="filter-bar" style="display:flex;gap:12px;align-items:center;max-width:none;">
+          <div class="filter-bar" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;max-width:none;">
+            <label style="font-size:11px;letter-spacing:1.5px;color:var(--muted);">Último escaneo:</label>
+            <input type="date" id="guests-scan-from" style="max-width:160px;" />
+            <span class="muted" style="font-size:11px;">→</span>
+            <input type="date" id="guests-scan-to" style="max-width:160px;" />
+            <button class="ghost-btn" id="guests-scan-clear" type="button">Limpiar</button>
             <select id="guests-color-filter" style="max-width:220px;">
               <option value="">Todos los colores</option>
               <option value="none">Sin color</option>
@@ -362,10 +367,9 @@
               <option value="red">Rojo</option>
               <option value="black">Negro</option>
             </select>
-            <span class="muted" style="font-size:11px;letter-spacing:1.5px;">Filtro por color del seguimiento</span>
           </div>
           <div class="table-wrap"><table class="table">
-            <thead><tr><th>Invitado</th><th>Teléfono</th><th>Distribuidor</th><th>Mód</th><th>Etapa</th><th>Color</th><th>Registrado</th><th>B.I.T</th><th>WG</th><th>Acciones</th></tr></thead>
+            <thead><tr><th>Invitado</th><th>Teléfono</th><th>Distribuidor</th><th>Mód</th><th>Etapa</th><th>Color</th><th>Registrado</th><th>Último escaneo</th><th>B.I.T</th><th>WG</th><th>Acciones</th></tr></thead>
             <tbody id="guests-tbody"></tbody>
           </table></div>
         </article>

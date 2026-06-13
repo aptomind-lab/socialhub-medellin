@@ -108,14 +108,15 @@ router.post('/register', registerLimiter, async (req, res) => {
 
 // LISTA — filtrada por jerarquía. Joins contra users (distributor) para aplicar scope
 router.get('/', requireAuth, (req, res) => {
-  const { module_id, stage, distributor_id, from, to, q, color } = req.query;
+  const { module_id, stage, distributor_id, from, to, q, color, scan_from, scan_to } = req.query;
   const scope = scopeUsersClause(req.user, 'u');
   let sql = `
     SELECT g.*, u.full_name AS distributor_name, u.distributor_code,
            m.number AS module_number, m.name AS module_name,
            pl.full_name AS productive_leader_name,
            CASE WHEN g.bit_date IS NOT NULL AND g.current_stage != 'FIRMADO'
-                THEN CAST(julianday('now') - julianday(g.bit_date) AS INTEGER) END AS days_since_bit
+                THEN CAST(julianday('now') - julianday(g.bit_date) AS INTEGER) END AS days_since_bit,
+           (SELECT MAX(scanned_at) FROM stage_history sh WHERE sh.guest_id = g.id) AS last_scan_at
     FROM guests g
     JOIN users u ON u.id = g.distributor_id
     LEFT JOIN modules m ON m.id = u.module_id
@@ -129,11 +130,14 @@ router.get('/', requireAuth, (req, res) => {
   if (distributor_id) { sql += ' AND g.distributor_id = ?'; params.push(distributor_id); }
   if (from)           { sql += ' AND date(g.created_at) >= ?'; params.push(from); }
   if (to)             { sql += ' AND date(g.created_at) <= ?'; params.push(to); }
+  // Filtro por último escaneo dentro de un rango.
+  if (scan_from)      { sql += ' AND date((SELECT MAX(scanned_at) FROM stage_history sh WHERE sh.guest_id = g.id)) >= ?'; params.push(scan_from); }
+  if (scan_to)        { sql += ' AND date((SELECT MAX(scanned_at) FROM stage_history sh WHERE sh.guest_id = g.id)) <= ?'; params.push(scan_to); }
   if (q) {
     sql += ' AND (g.full_name LIKE ? OR g.email LIKE ? OR g.phone LIKE ?)';
     const like = `%${q}%`; params.push(like, like, like);
   }
-  sql += ' ORDER BY g.created_at DESC LIMIT 500';
+  sql += ' ORDER BY last_scan_at DESC NULLS LAST, g.created_at DESC LIMIT 500';
   res.json({ guests: db.prepare(sql).all(...params) });
 });
 
@@ -191,10 +195,13 @@ router.get('/:id', requireAuth, (req, res) => {
   if (!guest) return res.status(404).json({ error: 'Invitado no encontrado' });
 
   const history = db.prepare(`
-    SELECT h.*, u.full_name AS scanned_by_name
+    SELECT h.id, h.from_stage, h.to_stage, h.scanned_at, h.notes, h.event_id,
+           u.full_name AS scanned_by_name,
+           e.name AS event_name, e.stage_target AS event_stage
     FROM stage_history h
     LEFT JOIN users u ON u.id = h.scanned_by
-    WHERE h.guest_id = ? ORDER BY scanned_at ASC
+    LEFT JOIN events e ON e.id = h.event_id
+    WHERE h.guest_id = ? ORDER BY h.scanned_at DESC
   `).all(guest.id);
   res.json({ guest, history });
 });

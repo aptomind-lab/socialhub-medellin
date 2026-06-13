@@ -1093,11 +1093,26 @@
   }
 
   // ============ GUESTS ============
+  function weekRangeISO() {
+    const now = new Date();
+    const dow = (now.getUTCDay() + 6) % 7; // L=0
+    const mon = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - dow));
+    const sun = new Date(mon); sun.setUTCDate(mon.getUTCDate() + 6);
+    return { from: mon.toISOString().slice(0,10), to: sun.toISOString().slice(0,10) };
+  }
+
   async function loadGuests(query = '') {
     const f = getFilters();
     const colorFilter = $('guests-color-filter') ? $('guests-color-filter').value : '';
+    // Defaults de filtros fecha: semana actual si los inputs están vacíos.
+    const sf = $('guests-scan-from'), st = $('guests-scan-to');
+    if (sf && st && !sf.value && !st.value) {
+      const w = weekRangeISO(); sf.value = w.from; st.value = w.to;
+    }
+    const scanFrom = sf ? sf.value : '';
+    const scanTo   = st ? st.value : '';
     const [data, wgList] = await Promise.all([
-      api('/api/guests' + qs({ ...f, q: query, color: colorFilter || undefined })),
+      api('/api/guests' + qs({ ...f, q: query, color: colorFilter || undefined, scan_from: scanFrom || undefined, scan_to: scanTo || undefined })),
       api('/api/wg/guests'),
     ]);
     const wgByGuest = {};
@@ -1124,8 +1139,9 @@
         actions += ` <button class="ghost-btn" data-action="edit-color" data-id="${g.id}" data-name="${g.full_name.replace(/"/g, '&quot;')}" data-color="${g.color || 'none'}" style="margin-left:6px;">Color</button>`;
       }
 
+      const lastScan = g.last_scan_at ? String(g.last_scan_at).slice(0, 16) : '—';
       return `
-        <tr>
+        <tr data-action="show-history" data-id="${g.id}" data-name="${g.full_name.replace(/"/g, '&quot;')}" style="cursor:pointer;">
           <td><strong>${g.full_name}</strong><div class="muted" style="font-size:12px;">${g.email || '—'}</div></td>
           <td><span class="muted" style="font-size:12px;">${g.phone || '—'}</span></td>
           <td>${g.distributor_name}</td>
@@ -1133,12 +1149,13 @@
           <td>${stageTag}</td>
           <td>${colorChip(g.color, g.color_manual)}</td>
           <td class="muted" style="font-size:12px;">${(g.created_at || '').slice(0, 10)}</td>
+          <td class="muted" style="font-size:12px;">${lastScan}</td>
           <td>${bitCell(g)}</td>
           <td>${wgCell}</td>
-          <td>${actions}</td>
+          <td onclick="event.stopPropagation();">${actions}</td>
         </tr>
       `;
-    }).join('') : '<tr><td colspan="10" class="muted">Sin invitados.</td></tr>';
+    }).join('') : '<tr><td colspan="11" class="muted">Sin invitados en el rango seleccionado.</td></tr>';
 
     $('guests-tbody').querySelectorAll('[data-action=mark-signed]').forEach((b) => {
       b.addEventListener('click', () => openSignModal(b.dataset.id, b.dataset.name));
@@ -1146,6 +1163,37 @@
     $('guests-tbody').querySelectorAll('[data-action=edit-color]').forEach((b) => {
       b.addEventListener('click', () => openColorModal(b.dataset.id, b.dataset.name, b.dataset.color));
     });
+    $('guests-tbody').querySelectorAll('[data-action=show-history]').forEach((tr) => {
+      tr.addEventListener('click', () => openGuestHistoryModal(tr.dataset.id, tr.dataset.name));
+    });
+  }
+
+  // Modal con historial de escaneos del invitado.
+  async function openGuestHistoryModal(guestId, guestName) {
+    openModal(`Historial de ${guestName}`, '<div class="muted">Cargando...</div>');
+    try {
+      const r = await api(`/api/guests/${guestId}`);
+      const rows = (r.history || []).map((h) => {
+        const date = String(h.scanned_at || '').slice(0, 16);
+        const event = h.event_name || (h.notes || '—');
+        const from = stageLabels[h.from_stage] || h.from_stage || '—';
+        const to   = stageLabels[h.to_stage]   || h.to_stage   || '—';
+        const arrow = h.from_stage && h.from_stage !== h.to_stage ? ` <span class="muted">${from} →</span> ` : ' ';
+        return `<tr>
+          <td class="muted" style="font-size:12px;">${date}</td>
+          <td>${event}</td>
+          <td>${arrow}<strong>${to}</strong></td>
+        </tr>`;
+      }).join('') || '<tr><td colspan="3" class="muted">Sin escaneos registrados.</td></tr>';
+      $('modal-body').innerHTML = `<div class="modal-body">
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Fecha</th><th>Evento</th><th>Etapa</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table></div>
+      </div>`;
+    } catch (e) {
+      $('modal-body').innerHTML = `<div class="modal-body"><div class="error">${e.message}</div></div>`;
+    }
   }
 
   function openSignModal(guestId, guestName) {
@@ -1202,9 +1250,18 @@
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => loadGuests(e.target.value), 250);
   });
-  // Listener para el filtro de color
+  // Listeners de filtros de la vista Invitados (color + fechas)
   document.addEventListener('change', (e) => {
-    if (e.target && e.target.id === 'guests-color-filter') loadGuests($('guest-search').value);
+    if (!e.target) return;
+    if (['guests-color-filter','guests-scan-from','guests-scan-to'].includes(e.target.id)) {
+      loadGuests($('guest-search').value);
+    }
+  });
+  document.addEventListener('click', (e) => {
+    if (e.target && e.target.id === 'guests-scan-clear') {
+      $('guests-scan-from').value = ''; $('guests-scan-to').value = '';
+      loadGuests($('guest-search').value);
+    }
   });
 
   // ============ MESSAGES (registro diario universal) ============

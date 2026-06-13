@@ -90,8 +90,10 @@ CREATE TABLE IF NOT EXISTS stage_history (
   to_stage      TEXT    NOT NULL,
   scanned_by    INTEGER REFERENCES users(id) ON DELETE SET NULL,
   scanned_at    TEXT    NOT NULL DEFAULT (datetime('now')),
-  notes         TEXT
+  notes         TEXT,
+  event_id      INTEGER REFERENCES events(id) ON DELETE SET NULL
 );
+CREATE INDEX IF NOT EXISTS idx_history_event ON stage_history(event_id);
 
 CREATE INDEX IF NOT EXISTS idx_history_guest ON stage_history(guest_id);
 CREATE INDEX IF NOT EXISTS idx_history_date  ON stage_history(scanned_at);

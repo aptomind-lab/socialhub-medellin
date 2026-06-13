@@ -127,10 +127,10 @@ router.post('/scan', requireAuth, (req, res) => {
     }
   }
   db.prepare(`
-    INSERT INTO stage_history (guest_id, from_stage, to_stage, scanned_by, notes)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO stage_history (guest_id, from_stage, to_stage, scanned_by, notes, event_id)
+    VALUES (?, ?, ?, ?, ?, ?)
   `).run(guest.id, guest.current_stage, advanced ? newStage : guest.current_stage,
-         req.user.id, `${advanced ? 'Avance' : 'Re-scan'} en evento: ${event.name}`);
+         req.user.id, `${advanced ? 'Avance' : 'Re-scan'} en evento: ${event.name}`, event.id);
 
   // Asistencia WG: se registra si el evento es WG O si es Plan Trabajo (1-scan martes).
   let wgInfo = null;
