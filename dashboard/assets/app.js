@@ -1104,6 +1104,7 @@
   async function loadGuests(query = '') {
     const f = getFilters();
     const colorFilter = $('guests-color-filter') ? $('guests-color-filter').value : '';
+    const stageFilter = $('guests-stage-filter') ? $('guests-stage-filter').value : '';
     // Defaults de filtros fecha: semana actual si los inputs están vacíos.
     const sf = $('guests-scan-from'), st = $('guests-scan-to');
     if (sf && st && !sf.value && !st.value) {
@@ -1112,7 +1113,7 @@
     const scanFrom = sf ? sf.value : '';
     const scanTo   = st ? st.value : '';
     const [data, wgList] = await Promise.all([
-      api('/api/guests' + qs({ ...f, q: query, color: colorFilter || undefined, scan_from: scanFrom || undefined, scan_to: scanTo || undefined })),
+      api('/api/guests' + qs({ ...f, q: query, color: colorFilter || undefined, stage: stageFilter || undefined, scan_from: scanFrom || undefined, scan_to: scanTo || undefined })),
       api('/api/wg/guests'),
     ]);
     const wgByGuest = {};
@@ -1253,7 +1254,7 @@
   // Listeners de filtros de la vista Invitados (color + fechas)
   document.addEventListener('change', (e) => {
     if (!e.target) return;
-    if (['guests-color-filter','guests-scan-from','guests-scan-to'].includes(e.target.id)) {
+    if (['guests-color-filter','guests-stage-filter','guests-scan-from','guests-scan-to'].includes(e.target.id)) {
       loadGuests($('guest-search').value);
     }
   });

@@ -125,14 +125,27 @@ router.get('/', requireAuth, (req, res) => {
   `;
   const params = [...scope.params];
   if (module_id)      { sql += ' AND u.module_id = ?'; params.push(module_id); }
-  if (stage)          { sql += ' AND g.current_stage = ?'; params.push(stage); }
   if (color)          { sql += ' AND g.color = ?'; params.push(color); }
   if (distributor_id) { sql += ' AND g.distributor_id = ?'; params.push(distributor_id); }
   if (from)           { sql += ' AND date(g.created_at) >= ?'; params.push(from); }
   if (to)             { sql += ' AND date(g.created_at) <= ?'; params.push(to); }
-  // Filtro por último escaneo dentro de un rango.
-  if (scan_from)      { sql += ' AND date((SELECT MAX(scanned_at) FROM stage_history sh WHERE sh.guest_id = g.id)) >= ?'; params.push(scan_from); }
-  if (scan_to)        { sql += ' AND date((SELECT MAX(scanned_at) FROM stage_history sh WHERE sh.guest_id = g.id)) <= ?'; params.push(scan_to); }
+  // Etapa registrada en un escaneo: filtra guests que tienen stage_history.to_stage = stage
+  // dentro del rango scan_from/scan_to (o cualquier momento si no hay rango).
+  if (stage) {
+    sql += ` AND EXISTS (
+      SELECT 1 FROM stage_history sh
+      WHERE sh.guest_id = g.id AND sh.to_stage = ?
+        ${scan_from ? 'AND date(sh.scanned_at) >= ?' : ''}
+        ${scan_to   ? 'AND date(sh.scanned_at) <= ?' : ''}
+    )`;
+    params.push(stage);
+    if (scan_from) params.push(scan_from);
+    if (scan_to)   params.push(scan_to);
+  } else {
+    // Sin filtro de etapa: scan_from/scan_to aplica al último escaneo del guest.
+    if (scan_from) { sql += ' AND date((SELECT MAX(scanned_at) FROM stage_history sh WHERE sh.guest_id = g.id)) >= ?'; params.push(scan_from); }
+    if (scan_to)   { sql += ' AND date((SELECT MAX(scanned_at) FROM stage_history sh WHERE sh.guest_id = g.id)) <= ?'; params.push(scan_to); }
+  }
   if (q) {
     sql += ' AND (g.full_name LIKE ? OR g.email LIKE ? OR g.phone LIKE ?)';
     const like = `%${q}%`; params.push(like, like, like);
