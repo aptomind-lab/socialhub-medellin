@@ -1093,6 +1093,53 @@
   }
 
   // ============ GUESTS ============
+  // Inyecta botón "Exportar CSV" en el panel de invitados (una sola vez).
+  function ensureGuestsExportButton() {
+    if (document.getElementById('guests-export-btn')) return;
+    const search = document.getElementById('guest-search');
+    if (!search) return;
+    const btn = document.createElement('button');
+    btn.id = 'guests-export-btn';
+    btn.className = 'primary sm';
+    btn.type = 'button';
+    btn.textContent = '⬇ Exportar CSV';
+    btn.style.marginLeft = '10px';
+    btn.addEventListener('click', exportGuestsCsv);
+    search.parentNode.insertBefore(btn, search.nextSibling);
+  }
+
+  function csvEscape(v) {
+    if (v == null) return '';
+    const s = String(v).replace(/"/g, '""');
+    return /[",\n;]/.test(s) ? `"${s}"` : s;
+  }
+
+  function exportGuestsCsv() {
+    const guests = window._shGuestsSnapshot || [];
+    if (!guests.length) { alert('Sin invitados que exportar.'); return; }
+    const headers = ['Invitado','Correo','Teléfono','Distribuidor','Código distribuidor','Módulo','Etapa','Color','B.I.T','Power Talk','Firmado mes','Registrado','Último escaneo'];
+    const rows = guests.map((g) => [
+      g.full_name, g.email, g.phone, g.distributor_name, g.distributor_code,
+      g.module_number ? `M${g.module_number}` : '',
+      stageLabels[g.current_stage] || g.current_stage,
+      g.color || '',
+      g.bit_date || '',
+      g.power_talk_date || '',
+      g.signed_month || '',
+      (g.created_at || '').slice(0, 10),
+      (g.last_scan_at || '').slice(0, 16),
+    ]);
+    const csv = [headers, ...rows].map((r) => r.map(csvEscape).join(',')).join('\n');
+    // BOM para que Excel reconozca UTF-8.
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const ts = new Date().toISOString().slice(0, 10);
+    a.href = url; a.download = `invitados-${ts}.csv`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
   function weekRangeISO() {
     const now = new Date();
     const dow = (now.getUTCDay() + 6) % 7; // L=0
@@ -1149,6 +1196,10 @@
     ]);
     const wgByGuest = {};
     wgList.guests.forEach((wg) => { wgByGuest[wg.id] = wg.wg; });
+
+    // Guardamos snapshot para exportar CSV con los datos visibles.
+    window._shGuestsSnapshot = data.guests;
+    ensureGuestsExportButton();
 
     $('guests-tbody').innerHTML = data.guests.length ? data.guests.map((g) => {
       const isSigned = g.current_stage === 'FIRMADO';
