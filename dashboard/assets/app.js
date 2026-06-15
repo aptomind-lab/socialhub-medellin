@@ -586,7 +586,7 @@
     ` : '';
 
     const headers = ({
-      systems:            ['Sistema', 'Mensajes mes', 'Books mes', 'B.I.T mes', 'Firmados', '% B.I.T → Firma'],
+      systems:            ['Sistema', 'Mensajes mes', 'Books mes', 'B.I.T mes', 'Firmados', '% B.I.T → Firma', ''],
       modules:            ['Módulo', 'Mensajes mes', 'Books mes', 'B.I.T mes', 'Firmados', '% B.I.T → Firma'],
       productive_leaders: ['Líder Productivo', 'Hoy', 'Semana', 'Mes', 'Books mes', 'B.I.T sem', 'Firmados', '% Conv.'],
       mesa:               ['Profesional', 'Hoy', 'Sem', 'Mes', 'Books sem', 'Shows sem', 'B.I.T sem', '% Conv.', 'Estado'],
@@ -594,6 +594,9 @@
 
     const rowHtml = data.rows.map((r) => {
       if (data.kind === 'systems' || data.kind === 'modules') {
+        const deleteCell = data.kind === 'systems' && me.role === 'lider_supremo'
+          ? `<td><button class="ghost-btn" data-action="delete-system" data-id="${r.id}" data-name="${r.label.replace(/"/g,'&quot;')}" style="color:#FF8B95;border-color:rgba(220,90,100,0.3);">Eliminar</button></td>`
+          : (data.kind === 'systems' ? '<td></td>' : '');
         return `<tr>
           <td><strong>${r.label}</strong><div class="muted" style="font-size:11px;">${r.sublabel}</div></td>
           <td>${r.messages_month}</td>
@@ -601,6 +604,7 @@
           <td>${r.bit_month}</td>
           <td><strong>${r.signed_month}</strong></td>
           <td><span class="funnel-convo ${r.conversion_pct >= 50 ? 'good' : r.conversion_pct >= 25 ? 'mid' : 'low'}">${r.conversion_pct}%</span></td>
+          ${deleteCell}
         </tr>`;
       }
       if (data.kind === 'productive_leaders') {
@@ -1340,8 +1344,22 @@
       loadGuests($('guest-search').value);
     }
   });
-  document.addEventListener('click', (e) => {
-    if (e.target && e.target.id === 'guests-scan-clear') {
+  document.addEventListener('click', async (e) => {
+    if (!e.target) return;
+    // Eliminar sistema desde Mi equipo
+    if (e.target.dataset && e.target.dataset.action === 'delete-system') {
+      const id = e.target.dataset.id;
+      const name = e.target.dataset.name;
+      const msg = `¿Eliminar el sistema "${name}"?\n\nLos usuarios, módulos y eventos asignados quedarán SIN sistema (system_id=NULL). Esta acción no se puede deshacer.`;
+      if (!confirm(msg)) return;
+      try {
+        const r = await api(`/api/systems/${id}`, { method: 'DELETE' });
+        alert(`✓ Eliminado "${r.deleted}".\nHuérfanos: ${r.orphaned.users} usuarios, ${r.orphaned.modules} módulos, ${r.orphaned.events} eventos.`);
+        loadTeam();
+      } catch (err) { alert(err.message); }
+      return;
+    }
+    if (e.target.id === 'guests-scan-clear') {
       $('guests-scan-from').value = ''; $('guests-scan-to').value = '';
       loadGuests($('guest-search').value);
     }
