@@ -1101,10 +1101,41 @@
     return { from: mon.toISOString().slice(0,10), to: sun.toISOString().slice(0,10) };
   }
 
+  let _guestsFiltersPrepared = false;
+  async function prepareGuestsFilters() {
+    if (_guestsFiltersPrepared) return;
+    const sysSel = $('guests-system-filter');
+    const modSel = $('guests-module-filter');
+    if (me.role === 'lider_supremo') {
+      if (sysSel) {
+        try {
+          const r = await api('/api/systems');
+          sysSel.innerHTML = '<option value="">Todos los sistemas</option>' +
+            (r.systems || []).map((s) => `<option value="${s.id}">${s.nombre}</option>`).join('');
+          sysSel.style.display = '';
+        } catch (e) { /* silent */ }
+      }
+    }
+    if (me.role === 'lider_supremo' || me.role === 'system_leader') {
+      if (modSel) {
+        try {
+          const r = await api('/api/modules');
+          modSel.innerHTML = '<option value="">Todos los módulos</option>' +
+            (r.modules || []).map((m) => `<option value="${m.id}">M${m.number} — ${m.name}${m.system_name ? ' · ' + m.system_name : ''}</option>`).join('');
+          modSel.style.display = '';
+        } catch (e) { /* silent */ }
+      }
+    }
+    _guestsFiltersPrepared = true;
+  }
+
   async function loadGuests(query = '') {
+    await prepareGuestsFilters();
     const f = getFilters();
     const colorFilter = $('guests-color-filter') ? $('guests-color-filter').value : '';
     const stageFilter = $('guests-stage-filter') ? $('guests-stage-filter').value : '';
+    const sysFilter   = $('guests-system-filter') ? $('guests-system-filter').value : '';
+    const modFilter   = $('guests-module-filter') ? $('guests-module-filter').value : '';
     // Defaults de filtros fecha: semana actual si los inputs están vacíos.
     const sf = $('guests-scan-from'), st = $('guests-scan-to');
     if (sf && st && !sf.value && !st.value) {
@@ -1113,7 +1144,7 @@
     const scanFrom = sf ? sf.value : '';
     const scanTo   = st ? st.value : '';
     const [data, wgList] = await Promise.all([
-      api('/api/guests' + qs({ ...f, q: query, color: colorFilter || undefined, stage: stageFilter || undefined, scan_from: scanFrom || undefined, scan_to: scanTo || undefined })),
+      api('/api/guests' + qs({ ...f, q: query, color: colorFilter || undefined, stage: stageFilter || undefined, scan_from: scanFrom || undefined, scan_to: scanTo || undefined, system_id: sysFilter || undefined, module_id: modFilter || undefined })),
       api('/api/wg/guests'),
     ]);
     const wgByGuest = {};
@@ -1254,7 +1285,7 @@
   // Listeners de filtros de la vista Invitados (color + fechas)
   document.addEventListener('change', (e) => {
     if (!e.target) return;
-    if (['guests-color-filter','guests-stage-filter','guests-scan-from','guests-scan-to'].includes(e.target.id)) {
+    if (['guests-color-filter','guests-stage-filter','guests-scan-from','guests-scan-to','guests-system-filter','guests-module-filter'].includes(e.target.id)) {
       loadGuests($('guest-search').value);
     }
   });

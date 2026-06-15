@@ -108,7 +108,7 @@ router.post('/register', registerLimiter, async (req, res) => {
 
 // LISTA — filtrada por jerarquía. Joins contra users (distributor) para aplicar scope
 router.get('/', requireAuth, (req, res) => {
-  const { module_id, stage, distributor_id, from, to, q, color, scan_from, scan_to } = req.query;
+  const { module_id, system_id, stage, distributor_id, from, to, q, color, scan_from, scan_to } = req.query;
   const scope = scopeUsersClause(req.user, 'u');
   let sql = `
     SELECT g.*, u.full_name AS distributor_name, u.distributor_code,
@@ -124,7 +124,19 @@ router.get('/', requireAuth, (req, res) => {
     WHERE 1=1 ${scope.sql}
   `;
   const params = [...scope.params];
-  if (module_id)      { sql += ' AND u.module_id = ?'; params.push(module_id); }
+  // Filtro módulo: valida que pertenezca al sistema del actor (excepto lider_supremo).
+  if (module_id) {
+    const m = db.prepare('SELECT system_id FROM modules WHERE id = ?').get(module_id);
+    const allowed =
+      req.user.role === 'lider_supremo' ||
+      (req.user.role === 'system_leader' && m && m.system_id === req.user.system_id) ||
+      parseInt(module_id, 10) === req.user.module_id;
+    if (allowed) { sql += ' AND u.module_id = ?'; params.push(module_id); }
+  }
+  // Filtro system_id: solo lider_supremo (resto ya está acotado por scope).
+  if (system_id && req.user.role === 'lider_supremo') {
+    sql += ' AND u.system_id = ?'; params.push(system_id);
+  }
   if (color)          { sql += ' AND g.color = ?'; params.push(color); }
   if (distributor_id) { sql += ' AND g.distributor_id = ?'; params.push(distributor_id); }
   if (from)           { sql += ' AND date(g.created_at) >= ?'; params.push(from); }
