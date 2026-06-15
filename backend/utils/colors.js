@@ -68,62 +68,39 @@ function computeColorForGuest(guestId, refDate = new Date()) {
   const week1 = weeks.find((w) => w.week_number === 1);
   const week2 = weeks.find((w) => w.week_number === 2);
 
-  // Faltas consecutivas (sobre todos los días pasados, en orden cronológico).
+  // Días pasados ordenados cronológicamente (solo días WG válidos: L-V).
   const allPastDays = weeks.flatMap((w) => w.days.filter((d) => !d.is_future)
     .map((d) => ({ ...d, week_number: w.week_number })));
   allPastDays.sort((a, b) => a.date.localeCompare(b.date));
-  let maxConsecMissed = 0, cur = 0;
-  for (const d of allPastDays) {
-    if (!d.attended) { cur++; if (cur > maxConsecMissed) maxConsecMissed = cur; }
-    else cur = 0;
+
+  const totalMissed = allPastDays.filter((d) => !d.attended).length;
+
+  // Faltas consecutivas ACTUALES (streak terminal). Asistir rompe el streak →
+  // permite que un naranja vuelva a amarillo al asistir.
+  let currentConsecMissed = 0;
+  for (let i = allPastDays.length - 1; i >= 0; i--) {
+    if (!allPastDays[i].attended) currentConsecMissed++;
+    else break;
   }
 
   const details = {
-    week_1: week1 ? { complete: week1.week_complete, finished: week1.week_finished, missed: week1.missed_count } : null,
-    week_2: week2 ? { complete: week2.week_complete, finished: week2.week_finished, missed: week2.missed_count } : null,
-    total_attendances: wg ? wg.total_attendances : 0,
-    max_consecutive_missed: maxConsecMissed,
+    total_past_days: allPastDays.length,
+    total_attended: wg ? wg.total_attendances : 0,
+    total_missed: totalMissed,
+    current_consec_missed: currentConsecMissed,
   };
 
-  // 5. Reglas en orden:
-  if (maxConsecMissed >= 2) {
-    return { color: COLORS.ORANGE, reason: '2 faltas consecutivas en WG', details };
+  // Reglas (5 estados):
+  //   2+ consecutivas → naranja
+  //   1+ falta histórica → amarillo (incluye amarillo recuperado desde naranja)
+  //   0 faltas         → verde
+  if (currentConsecMissed >= 2) {
+    return { color: COLORS.ORANGE, reason: `${currentConsecMissed} faltas WG consecutivas`, details };
   }
-
-  // Sin asistencia aún a ningún día WG → Verde Claro (pasó Power Talk pero aún no entra a la semana)
-  if (!wg || !wg.total_attendances) {
-    return { color: COLORS.LIGHT_GREEN, reason: 'Pasó Power Talk, citado a Plan de Trabajo', details };
+  if (totalMissed >= 1) {
+    return { color: COLORS.YELLOW, reason: `${totalMissed} falta(s) en WG`, details };
   }
-
-  // Semana 1 todavía no termina
-  if (!week1 || !week1.week_finished) {
-    if (week1 && week1.missed_count >= 1) {
-      return { color: COLORS.YELLOW, reason: `${week1.missed_count} falta(s) en semana 1`, details };
-    }
-    return { color: COLORS.LIGHT_GREEN, reason: 'En curso semana 1, sin faltas', details };
-  }
-
-  // Semana 1 cerrada
-  if (week1.week_complete) {
-    if (!week2 || !week2.week_finished) {
-      // Aún en semana 2 — Verde Fuerte si no hay faltas hasta ahora
-      if (week2 && week2.missed_count >= 1) {
-        return { color: COLORS.LIGHT_GREEN, reason: 'Verde fuerte degradado por 1 falta en semana 2', details };
-      }
-      return { color: COLORS.STRONG_GREEN, reason: 'Semana 1 completa', details };
-    }
-    // Semana 2 también terminó
-    if (week2.week_complete) {
-      return { color: COLORS.STRONG_GREEN, reason: 'Semana 1 y 2 completas', details };
-    }
-    if (week2.missed_count === 1) {
-      return { color: COLORS.LIGHT_GREEN, reason: 'Verde fuerte degradado por 1 falta en semana 2', details };
-    }
-    return { color: COLORS.YELLOW, reason: `${week2.missed_count} faltas en semana 2`, details };
-  }
-
-  // Semana 1 terminó con faltas → Amarillo (Naranja ya se filtró arriba)
-  return { color: COLORS.YELLOW, reason: `${week1.missed_count} falta(s) en semana 1`, details };
+  return { color: COLORS.STRONG_GREEN, reason: 'Asistencia WG perfecta', details };
 }
 
 // Aplica un color al guest (escribe en DB). isManual=true protege de futuros recálculos automáticos.
