@@ -69,7 +69,7 @@ router.post('/', requireAuth, async (req, res) => {
     lider_supremo:    ['lider_supremo', 'system_leader', 'module_leader', 'productive_leader', 'distributor'],
     system_leader:    ['module_leader', 'productive_leader', 'distributor'],
     module_leader:    ['productive_leader', 'distributor'],
-    productive_leader: [],
+    productive_leader: ['distributor'],
     distributor:      [],
   }[req.user.role] || [];
 
@@ -108,18 +108,21 @@ router.post('/', requireAuth, async (req, res) => {
     }
   }
 
-  // Módulo: lider_supremo y SL libres; ML siempre el suyo. Roles altos no requieren módulo.
+  // Módulo: lider_supremo y SL libres; ML/PL siempre el suyo. Roles altos no requieren módulo.
   let finalModuleId = module_id ? parseInt(module_id, 10) : null;
-  if (req.user.role === 'module_leader') finalModuleId = req.user.module_id;
+  if (req.user.role === 'module_leader')    finalModuleId = req.user.module_id;
+  if (req.user.role === 'productive_leader') finalModuleId = req.user.module_id;
   if (role === 'lider_supremo' || role === 'system_leader') finalModuleId = null;
   const needsModule = role === 'module_leader' || role === 'productive_leader' || role === 'distributor';
   if (needsModule && !finalModuleId) {
     return res.status(400).json({ error: 'Este rol requiere módulo' });
   }
 
-  // PL opcional, solo aplica a distributors
+  // PL opcional, solo aplica a distributors.
+  // Si el actor es PL creando distributor → PL.id por defecto (su mesa).
   let finalPLId = productive_leader_id ? parseInt(productive_leader_id, 10) : null;
   if (role !== 'distributor') finalPLId = null;
+  else if (req.user.role === 'productive_leader') finalPLId = req.user.id;
 
   // Validar unicidad de código y correo
   const code = String(distributor_code).toUpperCase().trim();
