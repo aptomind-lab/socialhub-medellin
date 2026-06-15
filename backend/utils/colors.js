@@ -68,8 +68,13 @@ function computeColorForGuest(guestId, refDate = new Date()) {
   const week1 = weeks.find((w) => w.week_number === 1);
   const week2 = weeks.find((w) => w.week_number === 2);
 
-  // Días pasados ordenados cronológicamente (solo días WG válidos: L-V).
-  const allPastDays = weeks.flatMap((w) => w.days.filter((d) => !d.is_future)
+  // Días pasados ordenados cronológicamente. Filtros:
+  //   1) NO futuros
+  //   2) SOLO L-V (dow 1..5) — sábado y domingo NUNCA cuentan
+  //   3) Posteriores al Power Talk (el guest no podía asistir antes de pasar PT)
+  const ptDate = g.power_talk_date;
+  const allPastDays = weeks.flatMap((w) => w.days
+    .filter((d) => !d.is_future && d.day >= 1 && d.day <= 5 && d.date > ptDate)
     .map((d) => ({ ...d, week_number: w.week_number })));
   allPastDays.sort((a, b) => a.date.localeCompare(b.date));
 
