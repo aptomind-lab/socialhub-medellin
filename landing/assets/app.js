@@ -28,7 +28,10 @@
   const bomCard = document.getElementById('next-bom-card');
   const bomDateEl = document.getElementById('next-bom-date');
   const DAYS_ES = { monday: 'Lunes', tuesday: 'Martes', wednesday: 'Miércoles', thursday: 'Jueves', friday: 'Viernes', saturday: 'Sábado', sunday: 'Domingo' };
-  fetch(`${API_BASE}/api/events/next-bom-public`)
+  const bomUrl = refParam
+    ? `${API_BASE}/api/events/next-bom-public?ref=${encodeURIComponent(refParam.toUpperCase())}`
+    : `${API_BASE}/api/events/next-bom-public`;
+  fetch(bomUrl)
     .then((r) => r.ok ? r.json() : null)
     .then((bom) => {
       if (!bom || !bom.date) return;

@@ -187,11 +187,35 @@ router.get('/scan/today-count', requireAuth, (req, res) => {
 // El landing está fuera del flujo autenticado, así que NO usamos requireAuth aquí.
 // Para que sea verdaderamente público hay que registrarlo en server.js antes del gate.
 router.get('/next-bom-public', (req, res) => {
-  const ev = db.prepare(`
-    SELECT recurrence_days FROM events
-     WHERE stage_target = 'BOM' AND active = 1 AND recurrence_type = 'weekly'
-     LIMIT 1
-  `).get();
+  // El landing pasa ?ref=CODIGO del invitador. Resolvemos su system_id para
+  // mostrar SOLO el B.O.M del sistema correcto (sin cruzar oficinas).
+  const ref = req.query.ref ? String(req.query.ref).toUpperCase().trim() : null;
+  let systemId = null;
+  if (ref) {
+    const contactor = db.prepare('SELECT system_id FROM users WHERE distributor_code = ?').get(ref);
+    if (contactor) systemId = contactor.system_id;
+  }
+
+  // Si hay sistema → buscar BOM de ese sistema; fallback a evento global (system_id IS NULL).
+  // Sin ref → usa el primer BOM global o, si no hay, cualquier BOM activo.
+  let ev;
+  if (systemId) {
+    ev = db.prepare(`
+      SELECT recurrence_days, system_id FROM events
+       WHERE stage_target = 'BOM' AND active = 1 AND recurrence_type = 'weekly'
+         AND (system_id = ? OR system_id IS NULL)
+       ORDER BY (system_id IS NULL) ASC, id ASC
+       LIMIT 1
+    `).get(systemId);
+  } else {
+    ev = db.prepare(`
+      SELECT recurrence_days, system_id FROM events
+       WHERE stage_target = 'BOM' AND active = 1 AND recurrence_type = 'weekly'
+       ORDER BY (system_id IS NULL) DESC, id ASC
+       LIMIT 1
+    `).get();
+  }
+
   if (!ev || !ev.recurrence_days) {
     return res.status(404).json({ error: 'Sin B.O.M activo' });
   }
@@ -203,6 +227,7 @@ router.get('/next-bom-public', (req, res) => {
     date,
     day_of_week: dayKey,
     day_label: DAYS_ES[dayKey],
+    system_id: ev.system_id,
     iso: date,
   });
 });
