@@ -128,8 +128,11 @@ router.get('/kpis', requireAuth, (req, res) => {
 // Filtros respetan rol: SL puede module_id; ML puede productive_leader_id de su módulo;
 // PL puede distributor_id de su mesa; distributor solo ve lo suyo (forzado por scope).
 router.get('/funnel', requireAuth, (req, res) => {
-  const { module_id, productive_leader_id, distributor_id, month } = req.query;
-  const { from, to } = buildMonthRange(month);
+  const { module_id, productive_leader_id, distributor_id, month, from: qFrom, to: qTo } = req.query;
+  // Rango personalizado from/to ANULA el filtro de mes si se pasa.
+  let from, to;
+  if (qFrom && qTo) { from = qFrom; to = qTo; }
+  else { ({ from, to } = buildMonthRange(month)); }
   const scope = scopeUsersClause(req.user, 'u');
 
   const extraFilters = [];
@@ -165,22 +168,52 @@ router.get('/funnel', requireAuth, (req, res) => {
   }
   const extraSql = extraFilters.length ? ' AND ' + extraFilters.join(' AND ') : '';
 
-  // Solo las etapas del embudo lineal con interés de conversión
-  const FUNNEL_STAGES = ['REGISTRO', 'BOM', 'BIT', 'POWER_TALK', 'PLAN_TRABAJO', 'FIRMADO'];
+  // Etapas del embudo lineal — incluye paso virtual "BOLETOS" entre BOM y BIT.
+  const FUNNEL_STAGES = ['REGISTRO', 'BOM', 'BOLETOS', 'BIT', 'POWER_TALK', 'PLAN_TRABAJO', 'FIRMADO'];
+  const STAGE_LABEL_MAP = { ...STAGE_LABELS, BOLETOS: 'Boletos' };
   const stageCounts = {};
+  const boletoBreakdown = {};
   for (const stage of FUNNEL_STAGES) {
-    const row = db.prepare(`
-      SELECT COUNT(DISTINCT h.guest_id) AS c
-      FROM stage_history h
-      JOIN guests g ON g.id = h.guest_id
-      JOIN users u ON u.id = g.distributor_id
-      WHERE h.to_stage = ? AND date(h.scanned_at) BETWEEN ? AND ?
-      ${scope.sql} ${extraSql}
-    `).get(stage, from, to, ...scope.params, ...extraParams);
-    stageCounts[stage] = row.c;
+    if (stage === 'BOLETOS') {
+      // Suma de Pago + Abonado + No Pago (excluye No Interesado del conteo del embudo).
+      const subs = ['BOLETO_PAGO','BOLETO_ABONADO','BOLETO_NO_PAGO'];
+      let total = 0;
+      for (const sub of subs) {
+        const r = db.prepare(`
+          SELECT COUNT(DISTINCT h.guest_id) AS c
+          FROM stage_history h
+          JOIN guests g ON g.id = h.guest_id
+          JOIN users u ON u.id = g.distributor_id
+          WHERE h.to_stage = ? AND date(h.scanned_at) BETWEEN ? AND ?
+          ${scope.sql} ${extraSql}
+        `).get(sub, from, to, ...scope.params, ...extraParams);
+        boletoBreakdown[sub] = r.c;
+        total += r.c;
+      }
+      // No interesado se cuenta aparte (no entra al embudo gráfico).
+      const ni = db.prepare(`
+        SELECT COUNT(DISTINCT h.guest_id) AS c
+        FROM stage_history h
+        JOIN guests g ON g.id = h.guest_id
+        JOIN users u ON u.id = g.distributor_id
+        WHERE h.to_stage = 'BOLETO_NO_INTERESADO' AND date(h.scanned_at) BETWEEN ? AND ?
+        ${scope.sql} ${extraSql}
+      `).get(from, to, ...scope.params, ...extraParams);
+      boletoBreakdown.BOLETO_NO_INTERESADO = ni.c;
+      stageCounts[stage] = total;
+    } else {
+      const row = db.prepare(`
+        SELECT COUNT(DISTINCT h.guest_id) AS c
+        FROM stage_history h
+        JOIN guests g ON g.id = h.guest_id
+        JOIN users u ON u.id = g.distributor_id
+        WHERE h.to_stage = ? AND date(h.scanned_at) BETWEEN ? AND ?
+        ${scope.sql} ${extraSql}
+      `).get(stage, from, to, ...scope.params, ...extraParams);
+      stageCounts[stage] = row.c;
+    }
   }
 
-  // Conversiones (etapa → siguiente)
   const funnel = FUNNEL_STAGES.map((s, i) => {
     const count = stageCounts[s];
     let conversion_pct = null;
@@ -188,7 +221,9 @@ router.get('/funnel', requireAuth, (req, res) => {
       const prev = stageCounts[FUNNEL_STAGES[i - 1]];
       conversion_pct = prev > 0 ? Math.round((count / prev) * 1000) / 10 : 0;
     }
-    return { stage: s, label: STAGE_LABELS[s], count, conversion_from_previous_pct: conversion_pct };
+    const row = { stage: s, label: STAGE_LABEL_MAP[s], count, conversion_from_previous_pct: conversion_pct };
+    if (s === 'BOLETOS') row.breakdown = boletoBreakdown;
+    return row;
   });
 
   // INPUTS — Embudo dual con fuentes separadas:
@@ -438,6 +473,57 @@ router.get('/team', requireAuth, (req, res) => {
       books_to_shows_pct: totalBooks > 0 ? Math.round((totalShows / totalBooks) * 1000) / 10 : 0,
     },
   });
+});
+
+// Lista de invitados que pasaron por una etapa del embudo dentro del rango.
+// Para BOLETOS: incluye los 4 sub-estados y los devuelve ordenados Pago, Abonado, No Pago, No Interesado.
+router.get('/funnel/guests', requireAuth, (req, res) => {
+  const { stage, from, to, module_id, productive_leader_id, distributor_id } = req.query;
+  if (!stage || !from || !to) return res.status(400).json({ error: 'stage, from, to son obligatorios' });
+  const scope = scopeUsersClause(req.user, 'u');
+
+  const extraFilters = [];
+  const extraParams = [];
+  if (module_id) {
+    const m = db.prepare('SELECT system_id FROM modules WHERE id = ?').get(module_id);
+    const allowed =
+      req.user.role === 'lider_supremo' ||
+      (req.user.role === 'system_leader' && m && m.system_id === req.user.system_id) ||
+      parseInt(module_id, 10) === req.user.module_id;
+    if (allowed) { extraFilters.push('u.module_id = ?'); extraParams.push(module_id); }
+  }
+  if (productive_leader_id) { extraFilters.push('(u.productive_leader_id = ? OR u.id = ?)'); extraParams.push(productive_leader_id, productive_leader_id); }
+  if (distributor_id) { extraFilters.push('u.id = ?'); extraParams.push(distributor_id); }
+  const extraSql = extraFilters.length ? ' AND ' + extraFilters.join(' AND ') : '';
+
+  const stagesToQuery = stage === 'BOLETOS'
+    ? ['BOLETO_PAGO','BOLETO_ABONADO','BOLETO_NO_PAGO','BOLETO_NO_INTERESADO']
+    : [stage];
+  const order = { BOLETO_PAGO: 1, BOLETO_ABONADO: 2, BOLETO_NO_PAGO: 3, BOLETO_NO_INTERESADO: 4 };
+
+  const sql = `
+    SELECT g.id, g.full_name, g.email, g.phone,
+           u.full_name AS distributor_name,
+           h.to_stage AS scan_stage, h.scanned_at, h.amount,
+           m.number AS module_number, s.nombre AS system_name
+    FROM stage_history h
+    JOIN guests g ON g.id = h.guest_id
+    JOIN users u ON u.id = g.distributor_id
+    LEFT JOIN modules m ON m.id = u.module_id
+    LEFT JOIN systems s ON s.id = u.system_id
+    WHERE h.to_stage IN (${stagesToQuery.map(()=>'?').join(',')})
+      AND date(h.scanned_at) BETWEEN ? AND ?
+      ${scope.sql} ${extraSql}
+    ORDER BY h.scanned_at DESC
+  `;
+  const rows = db.prepare(sql).all(...stagesToQuery, from, to, ...scope.params, ...extraParams);
+
+  // Si es BOLETOS, ordenar Pago → Abonado → NoPago → NoInteresado, luego por fecha desc.
+  if (stage === 'BOLETOS') {
+    rows.sort((a, b) => (order[a.scan_stage] - order[b.scan_stage]) || b.scanned_at.localeCompare(a.scanned_at));
+  }
+
+  res.json({ stage, from, to, guests: rows });
 });
 
 module.exports = router;

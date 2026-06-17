@@ -92,7 +92,7 @@ router.delete('/:id', requireAuth, requireRole('lider_supremo', 'system_leader')
 });
 
 router.post('/scan', requireAuth, (req, res) => {
-  const { event_id, qr_token } = req.body || {};
+  const { event_id, qr_token, amount } = req.body || {};
   if (!event_id || !qr_token) return res.status(400).json({ error: 'event_id y qr_token requeridos' });
 
   const event = db.prepare('SELECT * FROM events WHERE id = ?').get(event_id);
@@ -126,11 +126,13 @@ router.post('/scan', requireAuth, (req, res) => {
       db.prepare(`UPDATE guests SET power_talk_date = ? WHERE id = ?`).run(today, guest.id);
     }
   }
+  // Monto solo aplica a BOLETO_ABONADO (sub-stage que requiere registrar valor).
+  const finalAmount = (event.stage_target === 'BOLETO_ABONADO' && amount != null) ? parseFloat(amount) : null;
   db.prepare(`
-    INSERT INTO stage_history (guest_id, from_stage, to_stage, scanned_by, notes, event_id)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO stage_history (guest_id, from_stage, to_stage, scanned_by, notes, event_id, amount)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `).run(guest.id, guest.current_stage, advanced ? newStage : guest.current_stage,
-         req.user.id, `${advanced ? 'Avance' : 'Re-scan'} en evento: ${event.name}`, event.id);
+         req.user.id, `${advanced ? 'Avance' : 'Re-scan'} en evento: ${event.name}`, event.id, finalAmount);
 
   // Asistencia WG: se registra si el evento es WG O si es Plan Trabajo (1-scan martes).
   let wgInfo = null;

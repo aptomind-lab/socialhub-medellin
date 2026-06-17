@@ -507,7 +507,19 @@
 
   // ============ FUNNEL ============
   async function loadFunnel() {
-    const data = await api('/api/stats/funnel' + qs(getFilters()));
+    // Defaults de rango: mes actual.
+    const fFrom = $('funnel-from'), fTo = $('funnel-to');
+    if (fFrom && fTo && !fFrom.value && !fTo.value) {
+      const now = new Date();
+      const y = now.getUTCFullYear(), m = now.getUTCMonth();
+      const fmt = (d) => d.toISOString().slice(0, 10);
+      fFrom.value = fmt(new Date(Date.UTC(y, m, 1)));
+      fTo.value   = fmt(new Date(Date.UTC(y, m + 1, 0)));
+    }
+    const rangeParams = (fFrom && fTo && fFrom.value && fTo.value)
+      ? { from: fFrom.value, to: fTo.value } : {};
+    const data = await api('/api/stats/funnel' + qs({ ...getFilters(), ...rangeParams }));
+    window._shFunnelRange = rangeParams;
     const max = Math.max(...data.funnel.map((s) => s.count), 1);
 
     // Inputs: mensajes y TikTok leads → books (rama de entrada al embudo).
@@ -536,10 +548,34 @@
       const convo = s.conversion_from_previous_pct;
       const convoHtml = convo == null ? ''
         : `<div class="funnel-convo ${convo >= 50 ? 'good' : convo >= 25 ? 'mid' : 'low'}" title="Conversión desde la etapa anterior">${convo}%</div>`;
+      const widthPct = (s.count / max) * 100;
+      // BOLETOS: barra segmentada en 3 sub-stages (excluye NoInteresado del visual).
+      let barHtml;
+      if (s.stage === 'BOLETOS' && s.breakdown) {
+        const total = (s.breakdown.BOLETO_PAGO || 0) + (s.breakdown.BOLETO_ABONADO || 0) + (s.breakdown.BOLETO_NO_PAGO || 0);
+        const segPago    = total ? (s.breakdown.BOLETO_PAGO / total) * 100 : 0;
+        const segAbon    = total ? (s.breakdown.BOLETO_ABONADO / total) * 100 : 0;
+        const segNoPago  = total ? (s.breakdown.BOLETO_NO_PAGO / total) * 100 : 0;
+        const ni = s.breakdown.BOLETO_NO_INTERESADO || 0;
+        barHtml = `<div class="funnel-bar" style="display:flex;overflow:hidden;width:${widthPct}%;">
+          <div title="Pago: ${s.breakdown.BOLETO_PAGO || 0}" style="background:#4FE3A0;width:${segPago}%;"></div>
+          <div title="Abonado: ${s.breakdown.BOLETO_ABONADO || 0}" style="background:var(--gold-500);width:${segAbon}%;"></div>
+          <div title="No Pago: ${s.breakdown.BOLETO_NO_PAGO || 0}" style="background:#FF8B95;width:${segNoPago}%;"></div>
+        </div>`;
+        const niTag = ni ? `<span class="muted" style="margin-left:8px;font-size:11px;">+${ni} No Interesado</span>` : '';
+        return `
+          <div class="funnel-row" data-stage="BOLETOS" style="cursor:pointer;">
+            <div class="funnel-label">${s.label}${niTag}</div>
+            ${barHtml}
+            <div class="funnel-count">${s.count}</div>
+            ${convoHtml}
+          </div>
+        `;
+      }
       return `
-        <div class="funnel-row">
+        <div class="funnel-row" data-stage="${s.stage}" style="cursor:pointer;">
           <div class="funnel-label">${s.label}</div>
-          <div class="funnel-bar"><div class="funnel-fill" style="width:${(s.count / max) * 100}%"></div></div>
+          <div class="funnel-bar"><div class="funnel-fill" style="width:${widthPct}%"></div></div>
           <div class="funnel-count">${s.count}</div>
           ${convoHtml}
         </div>
@@ -547,6 +583,48 @@
     }).join('');
 
     $('funnel-list').innerHTML = inputsHtml + funnelHtml;
+
+    // Click en cualquier barra → modal con la lista de invitados de esa etapa en el rango.
+    $('funnel-list').querySelectorAll('.funnel-row[data-stage]').forEach((row) => {
+      row.addEventListener('click', () => openFunnelStageModal(row.dataset.stage));
+    });
+  }
+
+  const STAGE_LABEL_FRONT = {
+    REGISTRO:'Book', BOM:'Show B.O.M', BOLETOS:'Boletos', BIT:'B.I.T',
+    POWER_TALK:'Power Talk', PLAN_TRABAJO:'Plan de Trabajo', FIRMADO:'Profesional Firmado',
+    BOLETO_PAGO:'Pago', BOLETO_ABONADO:'Abonado', BOLETO_NO_PAGO:'No Pago', BOLETO_NO_INTERESADO:'No Interesado',
+  };
+
+  async function openFunnelStageModal(stage) {
+    const range = window._shFunnelRange || {};
+    if (!range.from || !range.to) return alert('Rango de fechas no definido.');
+    openModal(`${STAGE_LABEL_FRONT[stage] || stage} · ${range.from} → ${range.to}`, '<div class="muted">Cargando...</div>');
+    try {
+      const r = await api(`/api/stats/funnel/guests?stage=${encodeURIComponent(stage)}&from=${range.from}&to=${range.to}`);
+      const rows = (r.guests || []).map((g) => {
+        const subTag = stage === 'BOLETOS'
+          ? `<span class="tag ${g.scan_stage === 'BOLETO_PAGO' ? 'green' : g.scan_stage === 'BOLETO_ABONADO' ? 'gold' : g.scan_stage === 'BOLETO_NO_PAGO' ? 'red' : 'gray'}">${STAGE_LABEL_FRONT[g.scan_stage] || g.scan_stage}</span>` : '';
+        const amt = (g.scan_stage === 'BOLETO_ABONADO' && g.amount != null) ? `<strong style="color:var(--gold-400);">$${g.amount}</strong>` : '';
+        return `<tr>
+          <td><strong>${g.full_name}</strong><div class="muted" style="font-size:11px;">${g.email || ''}</div></td>
+          <td class="muted" style="font-size:12px;">${g.phone || '—'}</td>
+          <td>${g.distributor_name || '—'}</td>
+          <td>${subTag}</td>
+          <td>${amt}</td>
+          <td class="muted" style="font-size:11px;">${(g.scanned_at || '').slice(0, 16)}</td>
+        </tr>`;
+      }).join('') || '<tr><td colspan="6" class="muted">Sin invitados en este rango.</td></tr>';
+      $('modal-body').innerHTML = `<div class="modal-body">
+        <div class="muted" style="font-size:12px;margin-bottom:10px;">${r.guests.length} invitado(s)</div>
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Invitado</th><th>Teléfono</th><th>Distribuidor</th><th>Sub-etapa</th><th>Monto</th><th>Escaneado</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table></div>
+      </div>`;
+    } catch (e) {
+      $('modal-body').innerHTML = `<div class="modal-body"><div class="error">${e.message}</div></div>`;
+    }
   }
 
   // ============ TEAM (vista detallada por rol) ============
@@ -1344,6 +1422,26 @@
       loadGuests($('guest-search').value);
     }
   });
+  // Listeners filtros del embudo (fechas + presets)
+  document.addEventListener('change', (e) => {
+    if (e.target && (e.target.id === 'funnel-from' || e.target.id === 'funnel-to')) loadFunnel();
+  });
+  document.addEventListener('click', (e) => {
+    if (!e.target || !e.target.id) return;
+    if (e.target.id === 'funnel-preset-week') {
+      const w = (typeof weekRangeISO === 'function') ? weekRangeISO() : null;
+      if (w) { $('funnel-from').value = w.from; $('funnel-to').value = w.to; loadFunnel(); }
+    }
+    if (e.target.id === 'funnel-preset-month') {
+      const now = new Date();
+      const y = now.getUTCFullYear(), m = now.getUTCMonth();
+      const fmt = (d) => d.toISOString().slice(0, 10);
+      $('funnel-from').value = fmt(new Date(Date.UTC(y, m, 1)));
+      $('funnel-to').value   = fmt(new Date(Date.UTC(y, m + 1, 0)));
+      loadFunnel();
+    }
+  });
+
   document.addEventListener('click', async (e) => {
     if (!e.target) return;
     // Eliminar sistema desde Mi equipo

@@ -8,11 +8,16 @@ const STAGES = [
   'BOLETO_PAGO',
   'BOLETO_ABONADO',
   'BOLETO_NO_PAGO',
+  'BOLETO_NO_INTERESADO',
   'BIT',
   'POWER_TALK',
   'PLAN_TRABAJO',
   'FIRMADO',
 ];
+
+// Sub-etapas de "Boletos" (van entre BOM y BIT). NO_INTERESADO no entra en el embudo gráfico.
+const BOLETO_STAGES = ['BOLETO_PAGO', 'BOLETO_ABONADO', 'BOLETO_NO_PAGO', 'BOLETO_NO_INTERESADO'];
+const BOLETO_FUNNEL_STAGES = ['BOLETO_PAGO', 'BOLETO_ABONADO', 'BOLETO_NO_PAGO']; // gráficos
 
 // WORKING_GROUP se mantiene como etiqueta de evento (el scanner lo recibe como stage_target)
 // para registrar asistencia diaria, pero NO promueve current_stage.
@@ -24,6 +29,7 @@ const STAGE_LABELS = {
   BOLETO_PAGO:     'Boleto Pago',
   BOLETO_ABONADO:  'Boleto Abonado',
   BOLETO_NO_PAGO:  'Boleto No Pago',
+  BOLETO_NO_INTERESADO: 'Boleto No Interesado',
   BIT:             'B.I.T',
   POWER_TALK:      'Power Talk',
   PLAN_TRABAJO:    'Plan de Trabajo',
@@ -54,4 +60,4 @@ const ROLE_LABELS = {
   distributor:        'Profesional Activo',
 };
 
-module.exports = { STAGES, STAGE_LABELS, SCANNABLE_STAGES, nextStageAfterScan, ROLES, ROLE_LABELS };
+module.exports = { STAGES, STAGE_LABELS, SCANNABLE_STAGES, BOLETO_STAGES, BOLETO_FUNNEL_STAGES, nextStageAfterScan, ROLES, ROLE_LABELS };
