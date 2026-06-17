@@ -4,6 +4,7 @@ const { customAlphabet } = require('nanoid');
 const db = require('../db');
 const { requireAuth, requireRole, scopeUsersClause } = require('../middleware/auth');
 const { refreshUserBlock, isContactorUsable, CONTACTOR_ROLES } = require('../utils/blocking');
+const { STAGES } = require('../utils/stages');
 const { generateQrDataUrl, generateQrBuffer } = require('../utils/qrcode');
 const { sendQrEmail } = require('../utils/email');
 const colors = require('../utils/colors');
@@ -346,6 +347,56 @@ router.post('/:id/sign', requireAuth, (req, res) => {
       ? 'Contactador es Líder Productivo → asignado directo a su mesa'
       : 'Contactador no es PL → asignado a la mesa de su Líder Productivo',
   });
+});
+
+// Edición manual de etapa — líderes (supremo/sistema/módulo) pueden setear la etapa
+// de un invitado y se registra en stage_history como un escaneo más.
+// FIRMADO queda fuera: ese flujo requiere crear cuenta de usuario (POST /:id/sign).
+router.patch('/:id/stage', requireAuth, requireRole('lider_supremo', 'system_leader', 'module_leader'),
+(req, res) => {
+  const { to_stage, notes } = req.body || {};
+  if (!to_stage || !STAGES.includes(to_stage)) {
+    return res.status(400).json({ error: 'Etapa inválida' });
+  }
+  if (to_stage === 'FIRMADO') {
+    return res.status(400).json({ error: 'Usa el flujo de firma — no se permite editar a FIRMADO manualmente' });
+  }
+  const guest = db.prepare(`
+    SELECT g.*, u.module_id AS owner_module_id, u.system_id AS owner_system_id
+    FROM guests g JOIN users u ON u.id = g.distributor_id WHERE g.id = ?
+  `).get(req.params.id);
+  if (!guest) return res.status(404).json({ error: 'Invitado no encontrado' });
+
+  // Scope: lider_supremo todo; system_leader su sistema; module_leader su módulo.
+  if (req.user.role === 'module_leader' && guest.owner_module_id !== req.user.module_id) {
+    return res.status(403).json({ error: 'Fuera de tu módulo' });
+  }
+  if (req.user.role === 'system_leader' && guest.owner_system_id !== req.user.system_id) {
+    return res.status(403).json({ error: 'Fuera de tu sistema' });
+  }
+  if (guest.current_stage === 'FIRMADO') {
+    return res.status(409).json({ error: 'Invitado ya firmado — no se puede revertir aquí' });
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const prev = guest.current_stage;
+
+  db.prepare(`
+    UPDATE guests SET current_stage = ?, updated_at = datetime('now'),
+      bit_date        = CASE WHEN ? = 'BIT'        AND bit_date IS NULL        THEN ? ELSE bit_date END,
+      power_talk_date = CASE WHEN ? = 'POWER_TALK' AND power_talk_date IS NULL THEN ? ELSE power_talk_date END
+    WHERE id = ?
+  `).run(to_stage, to_stage, today, to_stage, today, guest.id);
+
+  db.prepare(`
+    INSERT INTO stage_history (guest_id, from_stage, to_stage, scanned_by, notes)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(guest.id, prev, to_stage, req.user.id,
+         `Edición manual${notes ? ' · ' + notes : ''}`);
+
+  try { colors.refreshColor(guest.id); } catch (e) { console.error('[stage-edit/color]', e.message); }
+  res.json({ ok: true, previous_stage: prev, new_stage: to_stage,
+             guest: db.prepare('SELECT * FROM guests WHERE id = ?').get(guest.id) });
 });
 
 // Override manual de color — SOLO Líder de Sistema o Líder de Módulo (de su módulo)

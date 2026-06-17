@@ -386,6 +386,20 @@
   function canEditColor() {
     return me && (me.role === 'system_leader' || me.role === 'module_leader');
   }
+  function canEditStage() {
+    return me && (me.role === 'lider_supremo' || me.role === 'system_leader' || me.role === 'module_leader');
+  }
+  // SQLite guarda datetime('now') en UTC sin marcador de zona ('YYYY-MM-DD HH:MM:SS').
+  // Lo parseamos como UTC y mostramos en hora local del navegador.
+  function fmtLocal(s) {
+    if (!s) return '—';
+    const iso = String(s).includes('T') ? String(s) : String(s).replace(' ', 'T');
+    const withZ = iso.endsWith('Z') ? iso : iso + 'Z';
+    const d = new Date(withZ);
+    if (isNaN(d.getTime())) return String(s).slice(0, 16);
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
   function bitCell(g) {
     if (!g.bit_date) return '<span class="muted" style="font-size:11px;">—</span>';
     const days = g.days_since_bit;
@@ -612,7 +626,7 @@
           <td>${g.distributor_name || '—'}</td>
           <td>${subTag}</td>
           <td>${amt}</td>
-          <td class="muted" style="font-size:11px;">${(g.scanned_at || '').slice(0, 16)}</td>
+          <td class="muted" style="font-size:11px;">${fmtLocal(g.scanned_at)}</td>
         </tr>`;
       }).join('') || '<tr><td colspan="6" class="muted">Sin invitados en este rango.</td></tr>';
       $('modal-body').innerHTML = `<div class="modal-body">
@@ -1209,7 +1223,7 @@
       g.power_talk_date || '',
       g.signed_month || '',
       (g.created_at || '').slice(0, 10),
-      (g.last_scan_at || '').slice(0, 16),
+      fmtLocal(g.last_scan_at),
     ]);
     const csv = [headers, ...rows].map((r) => r.map(csvEscape).join(',')).join('\n');
     // BOM para que Excel reconozca UTF-8.
@@ -1285,9 +1299,13 @@
 
     $('guests-tbody').innerHTML = data.guests.length ? data.guests.map((g) => {
       const isSigned = g.current_stage === 'FIRMADO';
-      const stageTag = isSigned
+      const editable = !isSigned && canEditStage();
+      const stageInner = isSigned
         ? `<span class="tag green">✦ ${stageLabels[g.current_stage] || g.current_stage}</span>`
-        : `<span class="tag gold">${stageLabels[g.current_stage] || g.current_stage}</span>`;
+        : `<span class="tag gold" ${editable ? 'style="cursor:pointer;text-decoration:underline dotted;" title="Click para cambiar etapa"' : ''}>${stageLabels[g.current_stage] || g.current_stage}</span>`;
+      const stageTag = editable
+        ? `<span data-action="edit-stage" data-id="${g.id}" data-name="${g.full_name.replace(/"/g, '&quot;')}" data-stage="${g.current_stage}">${stageInner}</span>`
+        : stageInner;
       const wgInfo = wgByGuest[g.id] || { status: 'none' };
       const wgBadge = WG_BADGE[wgInfo.status] || WG_BADGE.none;
       const wgCell = (!wgInfo.status || wgInfo.status === 'none')
@@ -1304,14 +1322,14 @@
         actions += ` <button class="ghost-btn" data-action="edit-color" data-id="${g.id}" data-name="${g.full_name.replace(/"/g, '&quot;')}" data-color="${g.color || 'none'}" style="margin-left:6px;">Color</button>`;
       }
 
-      const lastScan = g.last_scan_at ? String(g.last_scan_at).slice(0, 16) : '—';
+      const lastScan = fmtLocal(g.last_scan_at);
       return `
         <tr data-action="show-history" data-id="${g.id}" data-name="${g.full_name.replace(/"/g, '&quot;')}" style="cursor:pointer;">
           <td><strong>${g.full_name}</strong><div class="muted" style="font-size:12px;">${g.email || '—'}</div></td>
           <td><span class="muted" style="font-size:12px;">${g.phone || '—'}</span></td>
           <td>${g.distributor_name}</td>
           <td>${g.module_number ? `M${g.module_number}` : '—'}</td>
-          <td>${stageTag}</td>
+          <td onclick="if(event.target.closest('[data-action=edit-stage]'))event.stopPropagation();">${stageTag}</td>
           <td>${colorChip(g.color, g.color_manual)}</td>
           <td class="muted" style="font-size:12px;">${(g.created_at || '').slice(0, 10)}</td>
           <td class="muted" style="font-size:12px;">${lastScan}</td>
@@ -1331,6 +1349,37 @@
     $('guests-tbody').querySelectorAll('[data-action=show-history]').forEach((tr) => {
       tr.addEventListener('click', () => openGuestHistoryModal(tr.dataset.id, tr.dataset.name));
     });
+    $('guests-tbody').querySelectorAll('[data-action=edit-stage]').forEach((el) => {
+      el.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        openEditStageModal(el.dataset.id, el.dataset.name, el.dataset.stage);
+      });
+    });
+  }
+
+  // Modal de edición manual de etapa (lider_supremo / system_leader / module_leader).
+  function openEditStageModal(guestId, guestName, currentStage) {
+    const EDITABLE = ['REGISTRO','BOM','BOLETO_PAGO','BOLETO_ABONADO','BOLETO_NO_PAGO','BOLETO_NO_INTERESADO','BIT','POWER_TALK','PLAN_TRABAJO'];
+    const opts = EDITABLE.map((s) => `<option value="${s}" ${s===currentStage?'selected':''}>${stageLabels[s] || s}</option>`).join('');
+    openModal('Cambiar etapa', `
+      <div class="field"><label>Invitado</label><input type="text" value="${guestName}" disabled /></div>
+      <div class="field"><label>Nueva etapa</label><select id="es-stage">${opts}</select></div>
+      <div class="field"><label>Notas (opcional)</label><input type="text" id="es-notes" placeholder="Motivo del cambio" /></div>
+      <p class="hint" style="margin:0 0 18px;">Este cambio se registra en el historial como un escaneo manual con la fecha/hora actual.</p>
+      <button class="primary" id="confirm-edit-stage">Guardar etapa</button>
+    `);
+    $('confirm-edit-stage').addEventListener('click', async () => {
+      try {
+        await api(`/api/guests/${guestId}/stage`, {
+          method: 'PATCH',
+          body: JSON.stringify({ to_stage: $('es-stage').value, notes: $('es-notes').value || null }),
+        });
+        closeModal();
+        loadGuests($('guest-search').value);
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    });
   }
 
   // Modal con historial de escaneos del invitado.
@@ -1339,7 +1388,7 @@
     try {
       const r = await api(`/api/guests/${guestId}`);
       const rows = (r.history || []).map((h) => {
-        const date = String(h.scanned_at || '').slice(0, 16);
+        const date = fmtLocal(h.scanned_at);
         const event = h.event_name || (h.notes || '—');
         const from = stageLabels[h.from_stage] || h.from_stage || '—';
         const to   = stageLabels[h.to_stage]   || h.to_stage   || '—';
