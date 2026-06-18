@@ -35,10 +35,10 @@ function statsForUser(userId, b) {
       (SELECT MAX(created_at) FROM daily_activity WHERE user_id=?)                                       AS last_message_at,
       (SELECT COUNT(DISTINCT h.guest_id) FROM stage_history h
          JOIN guests g ON g.id=h.guest_id
-         WHERE g.distributor_id=? AND h.to_stage='BOM' AND date(h.scanned_at)>=?)                     AS shows_week,
+         WHERE g.distributor_id=? AND h.to_stage='BOM' AND date(h.scanned_at, '-5 hours')>=?)                     AS shows_week,
       (SELECT COUNT(DISTINCT h.guest_id) FROM stage_history h
          JOIN guests g ON g.id=h.guest_id
-         WHERE g.distributor_id=? AND h.to_stage='BIT' AND date(h.scanned_at)>=?)                     AS bit_week
+         WHERE g.distributor_id=? AND h.to_stage='BIT' AND date(h.scanned_at, '-5 hours')>=?)                     AS bit_week
   `).get(
     userId, b.today,
     userId, b.weekStart,
@@ -126,7 +126,7 @@ router.get('/role-breakdown', requireAuth, (req, res) => {
              JOIN users u ON u.id=dm.user_id WHERE u.system_id=? AND dm.date>=?) AS books_month,
           (SELECT COUNT(DISTINCT h.guest_id) FROM stage_history h
              JOIN guests g ON g.id=h.guest_id JOIN users u ON u.id=g.distributor_id
-             WHERE u.system_id=? AND h.to_stage='BIT' AND date(h.scanned_at)>=?) AS bit_month,
+             WHERE u.system_id=? AND h.to_stage='BIT' AND date(h.scanned_at, '-5 hours')>=?) AS bit_month,
           (SELECT COUNT(*) FROM guests g JOIN users u ON u.id=g.distributor_id
              WHERE u.system_id=? AND g.current_stage='FIRMADO' AND g.signed_month=substr(?,1,7)) AS signed_month
       `).get(s.id, b.monthStart, s.id, b.monthStart, s.id, b.monthStart, s.id, b.today);
@@ -154,7 +154,7 @@ router.get('/role-breakdown', requireAuth, (req, res) => {
              JOIN users u ON u.id=dm.user_id WHERE u.module_id=? AND dm.date>=?) AS books_month,
           (SELECT COUNT(DISTINCT h.guest_id) FROM stage_history h
              JOIN guests g ON g.id=h.guest_id JOIN users u ON u.id=g.distributor_id
-             WHERE u.module_id=? AND h.to_stage='BIT' AND date(h.scanned_at)>=?) AS bit_month,
+             WHERE u.module_id=? AND h.to_stage='BIT' AND date(h.scanned_at, '-5 hours')>=?) AS bit_month,
           (SELECT COUNT(*) FROM guests g JOIN users u ON u.id=g.distributor_id
              WHERE u.module_id=? AND g.current_stage='FIRMADO' AND g.signed_month=substr(?,1,7)) AS signed_month
       `).get(m.id, b.monthStart, m.id, b.monthStart, m.id, b.monthStart, m.id, b.today);
@@ -185,7 +185,7 @@ router.get('/role-breakdown', requireAuth, (req, res) => {
       const countBitWeek = db.prepare(`
         SELECT COUNT(DISTINCT h.guest_id) AS c FROM stage_history h
         JOIN guests g ON g.id=h.guest_id
-        WHERE g.distributor_id IN (${placeholders}) AND h.to_stage='BIT' AND date(h.scanned_at)>=?
+        WHERE g.distributor_id IN (${placeholders}) AND h.to_stage='BIT' AND date(h.scanned_at, '-5 hours')>=?
       `).get(...mesaIds, b.weekStart).c;
       const messages_today  = sum('messages', 'date', b.today);
       const messages_week   = sum('messages', 'date', b.weekStart);
@@ -199,7 +199,7 @@ router.get('/role-breakdown', requireAuth, (req, res) => {
       const bit_month = db.prepare(`
         SELECT COUNT(DISTINCT h.guest_id) AS c FROM stage_history h
         JOIN guests g ON g.id=h.guest_id
-        WHERE g.distributor_id IN (${placeholders}) AND h.to_stage='BIT' AND date(h.scanned_at)>=?
+        WHERE g.distributor_id IN (${placeholders}) AND h.to_stage='BIT' AND date(h.scanned_at, '-5 hours')>=?
       `).get(...mesaIds, b.monthStart).c;
       return {
         kind: 'productive_leader',

@@ -3,6 +3,7 @@ const db = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { STAGES, SCANNABLE_STAGES, nextStageAfterScan, STAGE_LABELS } = require('../utils/stages');
 const { eventHappensToday, dayOfWeekLabel, DAYS_ES, DAYS, getISOWeek, dayOfWeekKey, nextOccurrenceForWeeklyEvent } = require('../utils/calendar');
+const { localDate } = require('../utils/tz');
 const wg = require('../utils/wg');
 const colors = require('../utils/colors');
 const gam = require('../utils/gamification');
@@ -117,8 +118,8 @@ router.post('/scan', requireAuth, (req, res) => {
   if (advanced) {
     db.prepare("UPDATE guests SET current_stage = ?, updated_at = datetime('now') WHERE id = ?")
       .run(newStage, guest.id);
-    // Sellar fechas clave al alcanzar cada hito por primera vez
-    const today = new Date().toISOString().slice(0, 10);
+    // Sellar fechas clave al alcanzar cada hito por primera vez (hora local Colombia)
+    const today = localDate();
     if (newStage === 'BIT' && !guest.bit_date) {
       db.prepare(`UPDATE guests SET bit_date = ? WHERE id = ?`).run(today, guest.id);
     }
@@ -177,10 +178,10 @@ router.post('/scan', requireAuth, (req, res) => {
 });
 
 router.get('/scan/today-count', requireAuth, (req, res) => {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDate();
   const row = db.prepare(`
     SELECT COUNT(*) AS c FROM stage_history
-    WHERE scanned_by = ? AND date(scanned_at) = ?
+    WHERE scanned_by = ? AND date(scanned_at, '-5 hours') = ?
   `).get(req.user.id, today);
   res.json({ count: row.c });
 });

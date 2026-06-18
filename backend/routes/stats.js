@@ -83,7 +83,7 @@ router.get('/kpis', requireAuth, (req, res) => {
     FROM stage_history h
     JOIN guests g ON g.id = h.guest_id
     JOIN users u ON u.id = g.distributor_id
-    WHERE h.to_stage = 'BIT' AND date(h.scanned_at) BETWEEN ? AND ?
+    WHERE h.to_stage = 'BIT' AND date(h.scanned_at, '-5 hours') BETWEEN ? AND ?
     ${scope.sql} ${extra}
   `).get(from, to, ...scope.params, ...extraP).c;
 
@@ -91,10 +91,10 @@ router.get('/kpis', requireAuth, (req, res) => {
     SELECT COUNT(DISTINCT h_bit.guest_id) AS c
     FROM stage_history h_bit
     JOIN stage_history h_sig ON h_sig.guest_id = h_bit.guest_id AND h_sig.to_stage = 'FIRMADO'
-      AND date(h_sig.scanned_at) BETWEEN ? AND ?
+      AND date(h_sig.scanned_at, '-5 hours') BETWEEN ? AND ?
     JOIN guests g ON g.id = h_bit.guest_id
     JOIN users u ON u.id = g.distributor_id
-    WHERE h_bit.to_stage = 'BIT' AND date(h_bit.scanned_at) BETWEEN ? AND ?
+    WHERE h_bit.to_stage = 'BIT' AND date(h_bit.scanned_at, '-5 hours') BETWEEN ? AND ?
     ${scope.sql} ${extra}
   `).get(from, to, from, to, ...scope.params, ...extraP).c;
 
@@ -104,7 +104,7 @@ router.get('/kpis', requireAuth, (req, res) => {
     SELECT COUNT(*) AS c FROM stage_history h
     JOIN guests g ON g.id = h.guest_id
     JOIN users u ON u.id = g.distributor_id
-    WHERE h.to_stage = 'FIRMADO' AND date(h.scanned_at) BETWEEN ? AND ?
+    WHERE h.to_stage = 'FIRMADO' AND date(h.scanned_at, '-5 hours') BETWEEN ? AND ?
     ${scope.sql} ${extra}
   `).get(from, to, ...scope.params, ...extraP).c;
 
@@ -184,7 +184,7 @@ router.get('/funnel', requireAuth, (req, res) => {
           FROM stage_history h
           JOIN guests g ON g.id = h.guest_id
           JOIN users u ON u.id = g.distributor_id
-          WHERE h.to_stage = ? AND date(h.scanned_at) BETWEEN ? AND ?
+          WHERE h.to_stage = ? AND date(h.scanned_at, '-5 hours') BETWEEN ? AND ?
           ${scope.sql} ${extraSql}
         `).get(sub, from, to, ...scope.params, ...extraParams);
         boletoBreakdown[sub] = r.c;
@@ -196,7 +196,7 @@ router.get('/funnel', requireAuth, (req, res) => {
         FROM stage_history h
         JOIN guests g ON g.id = h.guest_id
         JOIN users u ON u.id = g.distributor_id
-        WHERE h.to_stage = 'BOLETO_NO_INTERESADO' AND date(h.scanned_at) BETWEEN ? AND ?
+        WHERE h.to_stage = 'BOLETO_NO_INTERESADO' AND date(h.scanned_at, '-5 hours') BETWEEN ? AND ?
         ${scope.sql} ${extraSql}
       `).get(from, to, ...scope.params, ...extraParams);
       boletoBreakdown.BOLETO_NO_INTERESADO = ni.c;
@@ -207,7 +207,7 @@ router.get('/funnel', requireAuth, (req, res) => {
         FROM stage_history h
         JOIN guests g ON g.id = h.guest_id
         JOIN users u ON u.id = g.distributor_id
-        WHERE h.to_stage = ? AND date(h.scanned_at) BETWEEN ? AND ?
+        WHERE h.to_stage = ? AND date(h.scanned_at, '-5 hours') BETWEEN ? AND ?
         ${scope.sql} ${extraSql}
       `).get(stage, from, to, ...scope.params, ...extraParams);
       stageCounts[stage] = row.c;
@@ -285,7 +285,7 @@ router.get('/by-module', requireAuth, (req, res) => {
       JOIN guests g ON g.id = h.guest_id
       JOIN users u ON u.id = g.distributor_id
       WHERE h.to_stage = 'FIRMADO' AND u.module_id = ?
-        AND date(h.scanned_at) BETWEEN ? AND ?
+        AND date(h.scanned_at, '-5 hours') BETWEEN ? AND ?
     `).get(m.id, from, to).c;
     const messages = db.prepare(`
       SELECT IFNULL(SUM(dm.messages), 0) AS t FROM daily_activity dm
@@ -296,7 +296,7 @@ router.get('/by-module', requireAuth, (req, res) => {
       SELECT COUNT(DISTINCT g.distributor_id) AS c FROM guests g
       JOIN users u ON u.id = g.distributor_id
       JOIN stage_history h ON h.guest_id = g.id AND h.to_stage = 'BOM'
-      WHERE u.module_id = ? AND date(h.scanned_at) BETWEEN ? AND ?
+      WHERE u.module_id = ? AND date(h.scanned_at, '-5 hours') BETWEEN ? AND ?
     `).get(m.id, from, to).c;
     return {
       module_id: m.id, number: m.number, name: m.name,
@@ -342,11 +342,11 @@ router.get('/monthly', requireAuth, (req, res) => {
 
   // Firmas por día (stage_history → FIRMADO)
   const signedByDay = db.prepare(`
-    SELECT date(h.scanned_at) AS d, COUNT(*) AS c
+    SELECT date(h.scanned_at, '-5 hours') AS d, COUNT(*) AS c
     FROM stage_history h
     JOIN guests g ON g.id = h.guest_id
     JOIN users u ON u.id = g.distributor_id
-    WHERE h.to_stage = 'FIRMADO' AND date(h.scanned_at) BETWEEN ? AND ? ${scope.sql} ${extra}
+    WHERE h.to_stage = 'FIRMADO' AND date(h.scanned_at, '-5 hours') BETWEEN ? AND ? ${scope.sql} ${extra}
     GROUP BY d
   `).all(from, to, ...scope.params, ...extraP);
 
@@ -388,14 +388,14 @@ router.get('/comparison', requireAuth, (req, res) => {
       SELECT COUNT(*) AS c FROM stage_history h
       JOIN guests g ON g.id = h.guest_id
       JOIN users u ON u.id = g.distributor_id
-      WHERE h.to_stage = 'FIRMADO' AND date(h.scanned_at) BETWEEN ? AND ?
+      WHERE h.to_stage = 'FIRMADO' AND date(h.scanned_at, '-5 hours') BETWEEN ? AND ?
       ${scope.sql} ${moduleFilter.sql}
     `).get(from, to, ...scope.params, ...moduleFilter.params).c;
     const bit = db.prepare(`
       SELECT COUNT(DISTINCT h.guest_id) AS c FROM stage_history h
       JOIN guests g ON g.id = h.guest_id
       JOIN users u ON u.id = g.distributor_id
-      WHERE h.to_stage = 'BIT' AND date(h.scanned_at) BETWEEN ? AND ?
+      WHERE h.to_stage = 'BIT' AND date(h.scanned_at, '-5 hours') BETWEEN ? AND ?
       ${scope.sql} ${moduleFilter.sql}
     `).get(from, to, ...scope.params, ...moduleFilter.params).c;
     const messages = db.prepare(`
@@ -445,10 +445,10 @@ router.get('/team', requireAuth, (req, res) => {
       IFNULL((SELECT COUNT(*) FROM guests g WHERE g.distributor_id = u.id AND date(g.created_at) BETWEEN ? AND ?), 0) AS books_week,
       IFNULL((SELECT COUNT(DISTINCT h.guest_id) FROM stage_history h
               JOIN guests g ON g.id = h.guest_id
-              WHERE g.distributor_id = u.id AND h.to_stage = 'BOM' AND date(h.scanned_at) BETWEEN ? AND ?), 0) AS shows_week,
+              WHERE g.distributor_id = u.id AND h.to_stage = 'BOM' AND date(h.scanned_at, '-5 hours') BETWEEN ? AND ?), 0) AS shows_week,
       IFNULL((SELECT COUNT(DISTINCT h.guest_id) FROM stage_history h
               JOIN guests g ON g.id = h.guest_id
-              WHERE g.distributor_id = u.id AND h.to_stage = 'BIT' AND date(h.scanned_at) BETWEEN ? AND ?), 0) AS bit_week
+              WHERE g.distributor_id = u.id AND h.to_stage = 'BIT' AND date(h.scanned_at, '-5 hours') BETWEEN ? AND ?), 0) AS bit_week
     FROM users u
     WHERE u.productive_leader_id = ? AND u.role = 'distributor'
     ORDER BY u.full_name
@@ -512,7 +512,7 @@ router.get('/funnel/guests', requireAuth, (req, res) => {
     LEFT JOIN modules m ON m.id = u.module_id
     LEFT JOIN systems s ON s.id = u.system_id
     WHERE h.to_stage IN (${stagesToQuery.map(()=>'?').join(',')})
-      AND date(h.scanned_at) BETWEEN ? AND ?
+      AND date(h.scanned_at, '-5 hours') BETWEEN ? AND ?
       ${scope.sql} ${extraSql}
     ORDER BY h.scanned_at DESC
   `;

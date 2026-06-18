@@ -148,16 +148,16 @@ router.get('/', requireAuth, (req, res) => {
     sql += ` AND EXISTS (
       SELECT 1 FROM stage_history sh
       WHERE sh.guest_id = g.id AND sh.to_stage = ?
-        ${scan_from ? 'AND date(sh.scanned_at) >= ?' : ''}
-        ${scan_to   ? 'AND date(sh.scanned_at) <= ?' : ''}
+        ${scan_from ? "AND date(sh.scanned_at, '-5 hours') >= ?" : ''}
+        ${scan_to   ? "AND date(sh.scanned_at, '-5 hours') <= ?" : ''}
     )`;
     params.push(stage);
     if (scan_from) params.push(scan_from);
     if (scan_to)   params.push(scan_to);
   } else {
     // Sin filtro de etapa: scan_from/scan_to aplica al último escaneo del guest.
-    if (scan_from) { sql += ' AND date((SELECT MAX(scanned_at) FROM stage_history sh WHERE sh.guest_id = g.id)) >= ?'; params.push(scan_from); }
-    if (scan_to)   { sql += ' AND date((SELECT MAX(scanned_at) FROM stage_history sh WHERE sh.guest_id = g.id)) <= ?'; params.push(scan_to); }
+    if (scan_from) { sql += " AND date((SELECT MAX(scanned_at) FROM stage_history sh WHERE sh.guest_id = g.id), '-5 hours') >= ?"; params.push(scan_from); }
+    if (scan_to)   { sql += " AND date((SELECT MAX(scanned_at) FROM stage_history sh WHERE sh.guest_id = g.id), '-5 hours') <= ?"; params.push(scan_to); }
   }
   if (q) {
     sql += ' AND (g.full_name LIKE ? OR g.email LIKE ? OR g.phone LIKE ?)';

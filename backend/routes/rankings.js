@@ -28,7 +28,7 @@ router.get('/latam-signs', requireAuth, (req, res) => {
     JOIN guests g ON g.id = h.guest_id
     JOIN users u ON u.id = g.distributor_id
     LEFT JOIN systems s ON s.id = u.system_id
-    WHERE h.to_stage = 'FIRMADO' AND date(h.scanned_at) BETWEEN ? AND ?
+    WHERE h.to_stage = 'FIRMADO' AND date(h.scanned_at, '-5 hours') BETWEEN ? AND ?
     GROUP BY u.id
     ORDER BY signs DESC, u.full_name ASC
     LIMIT 10
@@ -48,7 +48,7 @@ router.get('/latam-bit', requireAuth, (req, res) => {
     JOIN guests g ON g.id = h.guest_id
     JOIN users u ON u.id = g.distributor_id
     LEFT JOIN systems s ON s.id = u.system_id
-    WHERE h.to_stage = 'BIT' AND date(h.scanned_at) BETWEEN ? AND ?
+    WHERE h.to_stage = 'BIT' AND date(h.scanned_at, '-5 hours') BETWEEN ? AND ?
     GROUP BY u.id
     ORDER BY bit_shows DESC, u.full_name ASC
     LIMIT 10
