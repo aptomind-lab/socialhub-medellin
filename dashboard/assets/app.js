@@ -1941,6 +1941,15 @@
     $('sc-preview').hidden = false;
     const sourceTag = scPending.source === 'email'
       ? '<span class="tag gold" style="margin-left:8px;font-size:10px;">Buscado por correo</span>' : '';
+    // BOLETO_ABONADO: muestra campo de monto inline en el preview.
+    const selEv = $('sc-event');
+    const optEv = selEv ? selEv.options[selEv.selectedIndex] : null;
+    const evStage = optEv ? optEv.dataset.stage : '';
+    const amountField = evStage === 'BOLETO_ABONADO' ? `
+      <div class="field" style="margin:12px 0;">
+        <label for="sc-amount" style="display:block;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:var(--gold-400);margin-bottom:6px;">Monto abonado (COP)</label>
+        <input type="number" inputmode="decimal" id="sc-amount" placeholder="Ej. 50000" step="1000" min="1" autocomplete="off" />
+      </div>` : '';
     $('sc-preview').innerHTML = `
       <div class="scanner-preview">
         <div class="scanner-preview-title">${g.full_name}${sourceTag}</div>
@@ -1952,12 +1961,14 @@
           ${g.bit_date ? `<span><strong>B.I.T:</strong> ${g.bit_date}</span>` : ''}
         </div>
         ${scPending.warning ? `<div class="hint" style="margin:12px 0;">⚠ ${scPending.warning}</div>` : ''}
+        ${amountField}
         <div class="scanner-preview-actions">
           <button class="primary" id="sc-confirm">✓ Confirmar asistencia</button>
           <button class="ghost-btn" id="sc-cancel">Cancelar</button>
         </div>
       </div>
     `;
+    if (evStage === 'BOLETO_ABONADO') setTimeout(() => { try { $('sc-amount').focus(); } catch(e){} }, 50);
     $('sc-confirm').addEventListener('click', confirmScan);
     $('sc-cancel').addEventListener('click', () => {
       scPending = null;
@@ -1970,12 +1981,26 @@
     if (!scPending) return;
     const eventId = $('sc-event').value;
     if (!eventId) { alert('Selecciona un evento primero.'); return; }
+    const sel = $('sc-event');
+    const opt = sel.options[sel.selectedIndex];
+    const evStage = opt ? opt.dataset.stage : '';
+    let amount = null;
+    if (evStage === 'BOLETO_ABONADO') {
+      const raw = ($('sc-amount') || {}).value;
+      const parsed = parseFloat(String(raw || '').replace(/[^\d.]/g, ''));
+      if (isNaN(parsed) || parsed <= 0) {
+        alert('Ingresa el monto abonado antes de confirmar.');
+        try { $('sc-amount').focus(); } catch(e){}
+        return;
+      }
+      amount = parsed;
+    }
     const btn = $('sc-confirm');
     btn.disabled = true; btn.textContent = 'Guardando…';
     try {
       const result = await api('/api/events/scan', {
         method: 'POST',
-        body: JSON.stringify({ event_id: parseInt(eventId, 10), qr_token: scPending.token }),
+        body: JSON.stringify({ event_id: parseInt(eventId, 10), qr_token: scPending.token, amount }),
       });
       scRecent.unshift({
         time: new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }),
