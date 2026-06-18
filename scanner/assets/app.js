@@ -180,10 +180,26 @@
     if (!eventId) { alert('Selecciona un evento primero'); return; }
     const tokenStr = String(text).trim().split('/').pop();
 
+    // BOLETO_ABONADO: pedir monto antes de enviar el scan.
+    const sel = $('event-select');
+    const opt = sel.options[sel.selectedIndex];
+    const stage = opt ? opt.dataset.stage : '';
+    let amount = null;
+    if (stage === 'BOLETO_ABONADO') {
+      const raw = prompt('Monto abonado (COP):');
+      if (raw === null) return; // canceló
+      const parsed = parseFloat(String(raw).replace(/[^\d.]/g, ''));
+      if (isNaN(parsed) || parsed <= 0) {
+        alert('Monto inválido');
+        return;
+      }
+      amount = parsed;
+    }
+
     try {
       const result = await api('/api/events/scan', {
         method: 'POST',
-        body: JSON.stringify({ event_id: parseInt(eventId, 10), qr_token: tokenStr }),
+        body: JSON.stringify({ event_id: parseInt(eventId, 10), qr_token: tokenStr, amount }),
       });
       showConfirm(result);
       await refreshCount();
