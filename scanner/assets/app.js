@@ -180,20 +180,15 @@
     if (!eventId) { alert('Selecciona un evento primero'); return; }
     const tokenStr = String(text).trim().split('/').pop();
 
-    // BOLETO_ABONADO: pedir monto antes de enviar el scan.
+    // BOLETO_ABONADO: pedir monto antes de enviar el scan (modal dedicado,
+    // prompt() no es confiable en PWA / iOS Safari mientras la cámara está activa).
     const sel = $('event-select');
     const opt = sel.options[sel.selectedIndex];
     const stage = opt ? opt.dataset.stage : '';
     let amount = null;
     if (stage === 'BOLETO_ABONADO') {
-      const raw = prompt('Monto abonado (COP):');
-      if (raw === null) return; // canceló
-      const parsed = parseFloat(String(raw).replace(/[^\d.]/g, ''));
-      if (isNaN(parsed) || parsed <= 0) {
-        alert('Monto inválido');
-        return;
-      }
-      amount = parsed;
+      amount = await askAmount(tokenStr);
+      if (amount === null) return; // canceló
     }
 
     try {
@@ -212,6 +207,41 @@
 
   function vibrate(pattern) {
     if (navigator.vibrate) try { navigator.vibrate(pattern); } catch(e){}
+  }
+
+  // Modal de monto para BOLETO_ABONADO. Resuelve con el número o null si canceló.
+  function askAmount(tokenStr) {
+    return new Promise((resolve) => {
+      const modal = $('amount-modal');
+      const input = $('amount-input');
+      const ok    = $('amount-confirm');
+      const cancel= $('amount-cancel');
+      const nameEl= $('amount-guest-name');
+      nameEl.textContent = tokenStr ? `QR ...${String(tokenStr).slice(-6)}` : '';
+      input.value = '';
+      modal.hidden = false;
+      // Pequeño delay para que iOS Safari permita el focus tras detectar QR
+      setTimeout(() => { try { input.focus(); } catch(e){} }, 50);
+
+      const cleanup = () => {
+        ok.removeEventListener('click', onOk);
+        cancel.removeEventListener('click', onCancel);
+        input.removeEventListener('keydown', onKey);
+        modal.hidden = true;
+      };
+      const onOk = () => {
+        const v = parseFloat(String(input.value).replace(/[^\d.]/g, ''));
+        if (isNaN(v) || v <= 0) { input.focus(); return; }
+        cleanup();
+        resolve(v);
+      };
+      const onCancel = () => { cleanup(); resolve(null); };
+      const onKey = (e) => { if (e.key === 'Enter') onOk(); if (e.key === 'Escape') onCancel(); };
+
+      ok.addEventListener('click', onOk);
+      cancel.addEventListener('click', onCancel);
+      input.addEventListener('keydown', onKey);
+    });
   }
 
   function showConfirm(result) {

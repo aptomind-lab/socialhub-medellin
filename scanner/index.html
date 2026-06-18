@@ -99,6 +99,22 @@
     </div>
   </div>
 
+  <!-- Modal para ingresar monto al escanear BOLETO_ABONADO -->
+  <div id="amount-modal" class="modal" hidden>
+    <div class="modal-card">
+      <h2>Monto abonado</h2>
+      <div id="amount-guest-name" class="modal-row" style="justify-content:center;font-weight:600;margin:6px 0 14px;"></div>
+      <div class="field" style="margin-bottom:18px;">
+        <label for="amount-input">Valor (COP)</label>
+        <input type="number" inputmode="decimal" id="amount-input" placeholder="Ej. 50000" step="1000" min="0" autocomplete="off" />
+      </div>
+      <div style="display:flex;gap:10px;">
+        <button id="amount-cancel" class="ghost-btn" style="flex:1;">Cancelar</button>
+        <button id="amount-confirm" class="primary" style="flex:1;">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
   <script src="assets/zxing.min.js"></script>
   <script src="config.js"></script>
   <script src="assets/app.js"></script>
