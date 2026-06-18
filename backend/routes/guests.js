@@ -399,6 +399,29 @@ router.patch('/:id/stage', requireAuth, requireRole('lider_supremo', 'system_lea
              guest: db.prepare('SELECT * FROM guests WHERE id = ?').get(guest.id) });
 });
 
+// Eliminar invitado — mismos roles y scope que la edición manual de etapa.
+// FIRMADO queda bloqueado porque ya tiene cuenta de usuario asociada.
+// stage_history tiene ON DELETE CASCADE, así que se borra automáticamente.
+router.delete('/:id', requireAuth, requireRole('lider_supremo', 'system_leader', 'module_leader'),
+(req, res) => {
+  const guest = db.prepare(`
+    SELECT g.*, u.module_id AS owner_module_id, u.system_id AS owner_system_id
+    FROM guests g JOIN users u ON u.id = g.distributor_id WHERE g.id = ?
+  `).get(req.params.id);
+  if (!guest) return res.status(404).json({ error: 'Invitado no encontrado' });
+  if (req.user.role === 'module_leader' && guest.owner_module_id !== req.user.module_id) {
+    return res.status(403).json({ error: 'Fuera de tu módulo' });
+  }
+  if (req.user.role === 'system_leader' && guest.owner_system_id !== req.user.system_id) {
+    return res.status(403).json({ error: 'Fuera de tu sistema' });
+  }
+  if (guest.current_stage === 'FIRMADO') {
+    return res.status(409).json({ error: 'Invitado firmado — su cuenta de usuario quedaría huérfana. No se puede eliminar.' });
+  }
+  db.prepare('DELETE FROM guests WHERE id = ?').run(guest.id);
+  res.json({ ok: true, deleted_id: guest.id });
+});
+
 // Override manual de color — SOLO Líder de Sistema o Líder de Módulo (de su módulo)
 router.patch('/:id/color', requireAuth, requireRole('system_leader', 'module_leader'), (req, res) => {
   const { color, notes } = req.body || {};

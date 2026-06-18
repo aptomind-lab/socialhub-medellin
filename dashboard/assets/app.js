@@ -1366,7 +1366,10 @@
       <div class="field"><label>Nueva etapa</label><select id="es-stage">${opts}</select></div>
       <div class="field"><label>Notas (opcional)</label><input type="text" id="es-notes" placeholder="Motivo del cambio" /></div>
       <p class="hint" style="margin:0 0 18px;">Este cambio se registra en el historial como un escaneo manual con la fecha/hora actual.</p>
-      <button class="primary" id="confirm-edit-stage">Guardar etapa</button>
+      <div style="display:flex;gap:10px;align-items:center;">
+        <button class="primary" id="confirm-edit-stage">Guardar etapa</button>
+        <button class="ghost-btn" id="confirm-delete-guest" style="color:#FF8B95;border-color:#FF8B95;">Eliminar invitado</button>
+      </div>
     `);
     $('confirm-edit-stage').addEventListener('click', async () => {
       try {
@@ -1374,6 +1377,16 @@
           method: 'PATCH',
           body: JSON.stringify({ to_stage: $('es-stage').value, notes: $('es-notes').value || null }),
         });
+        closeModal();
+        loadGuests($('guest-search').value);
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    });
+    $('confirm-delete-guest').addEventListener('click', async () => {
+      if (!confirm(`¿Eliminar a "${guestName}"? Se borrará el invitado y todo su historial de escaneos. Esta acción no se puede deshacer.`)) return;
+      try {
+        await api(`/api/guests/${guestId}`, { method: 'DELETE' });
         closeModal();
         loadGuests($('guest-search').value);
       } catch (e) {
