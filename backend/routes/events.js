@@ -48,7 +48,7 @@ router.get('/', requireAuth, (req, res) => {
 });
 
 router.post('/', requireAuth, requireRole('lider_supremo', 'system_leader', 'module_leader'), (req, res) => {
-  const { name, stage_target, date, recurrence_type, recurrence_days, system_id } = req.body || {};
+  const { name, stage_target, date, recurrence_type, recurrence_days, system_id, wg_session } = req.body || {};
   if (!name || !stage_target || !date) return res.status(400).json({ error: 'Faltan campos' });
   if (!SCANNABLE_STAGES.includes(stage_target)) return res.status(400).json({ error: 'Etapa inválida' });
 
@@ -61,16 +61,17 @@ router.post('/', requireAuth, requireRole('lider_supremo', 'system_leader', 'mod
   } else {
     finalSystemId = req.user.system_id;
   }
+  const wgs = (wg_session != null && wg_session !== '') ? parseInt(wg_session, 10) : null;
 
   const info = db.prepare(`
-    INSERT INTO events (name, stage_target, date, recurrence_type, recurrence_days, system_id)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(name, stage_target, date, recurrence_type || 'one_time', recurrence_days || null, finalSystemId);
+    INSERT INTO events (name, stage_target, date, recurrence_type, recurrence_days, system_id, wg_session)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(name, stage_target, date, recurrence_type || 'one_time', recurrence_days || null, finalSystemId, wgs);
   res.status(201).json({ event: db.prepare('SELECT * FROM events WHERE id = ?').get(info.lastInsertRowid) });
 });
 
 router.patch('/:id', requireAuth, requireRole('lider_supremo', 'system_leader', 'module_leader'), (req, res) => {
-  const { name, stage_target, date, active, recurrence_type, recurrence_days } = req.body || {};
+  const { name, stage_target, date, active, recurrence_type, recurrence_days, wg_session } = req.body || {};
   const fields = [], values = [];
   if (name !== undefined)            { fields.push('name = ?');            values.push(name); }
   if (stage_target !== undefined) {
@@ -81,6 +82,10 @@ router.patch('/:id', requireAuth, requireRole('lider_supremo', 'system_leader', 
   if (active !== undefined)          { fields.push('active = ?');          values.push(active ? 1 : 0); }
   if (recurrence_type !== undefined) { fields.push('recurrence_type = ?'); values.push(recurrence_type); }
   if (recurrence_days !== undefined) { fields.push('recurrence_days = ?'); values.push(recurrence_days || null); }
+  if (wg_session !== undefined) {
+    const v = (wg_session === null || wg_session === '') ? null : parseInt(wg_session, 10);
+    fields.push('wg_session = ?'); values.push(v);
+  }
   if (!fields.length) return res.status(400).json({ error: 'Sin campos' });
   values.push(req.params.id);
   db.prepare(`UPDATE events SET ${fields.join(', ')} WHERE id = ?`).run(...values);

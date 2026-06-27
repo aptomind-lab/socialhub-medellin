@@ -95,6 +95,7 @@ CREATE TABLE IF NOT EXISTS stage_history (
   amount        REAL
 );
 CREATE INDEX IF NOT EXISTS idx_history_event ON stage_history(event_id);
+-- events.wg_session se agrega vía migración 014 si no existe
 
 CREATE INDEX IF NOT EXISTS idx_history_guest ON stage_history(guest_id);
 CREATE INDEX IF NOT EXISTS idx_history_date  ON stage_history(scanned_at);
@@ -184,6 +185,7 @@ CREATE TABLE IF NOT EXISTS events (
   recurrence_days TEXT,
   active          INTEGER NOT NULL DEFAULT 1,
   system_id       INTEGER REFERENCES systems(id) ON DELETE SET NULL,
+  wg_session      INTEGER,
   created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 

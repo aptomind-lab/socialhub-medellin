@@ -254,7 +254,24 @@ router.get('/funnel', requireAuth, (req, res) => {
     books_total: inputsRow.books_messages + inputsRow.books_tiktok,
   };
 
-  res.json({ range: { from, to }, inputs, funnel });
+  // WG sessions (WG1..WG9): distinct guests escaneados en algún evento con wg_session = N
+  // dentro del rango. WG1 ya incluye scans de PLAN_TRABAJO porque su evento PT tiene wg_session=1.
+  const wgSessions = {};
+  for (let n = 1; n <= 9; n++) {
+    const r = db.prepare(`
+      SELECT COUNT(DISTINCT h.guest_id) AS c
+      FROM stage_history h
+      JOIN events e ON e.id = h.event_id
+      JOIN guests g ON g.id = h.guest_id
+      JOIN users u ON u.id = g.distributor_id
+      WHERE e.wg_session = ?
+        AND date(h.scanned_at, '-5 hours') BETWEEN ? AND ?
+        ${scope.sql} ${extraSql}
+    `).get(n, from, to, ...scope.params, ...extraParams);
+    wgSessions[`WG${n}`] = r.c;
+  }
+
+  res.json({ range: { from, to }, inputs, funnel, wg_sessions: wgSessions });
 });
 
 // ================= COMPARACIÓN POR MÓDULO (solo system_leader) =================
@@ -496,6 +513,32 @@ router.get('/funnel/guests', requireAuth, (req, res) => {
   if (distributor_id) { extraFilters.push('u.id = ?'); extraParams.push(distributor_id); }
   const extraSql = extraFilters.length ? ' AND ' + extraFilters.join(' AND ') : '';
 
+  // WG1..WG9: filtra por wg_session del evento (no por to_stage).
+  const wgMatch = /^WG([1-9])$/.exec(stage);
+  let rows;
+  if (wgMatch) {
+    const n = parseInt(wgMatch[1], 10);
+    const sql = `
+      SELECT g.id, g.full_name, g.email, g.phone,
+             u.full_name AS distributor_name,
+             h.to_stage AS scan_stage, h.scanned_at, h.amount,
+             e.name AS event_name,
+             m.number AS module_number, s.nombre AS system_name
+      FROM stage_history h
+      JOIN events e ON e.id = h.event_id
+      JOIN guests g ON g.id = h.guest_id
+      JOIN users u ON u.id = g.distributor_id
+      LEFT JOIN modules m ON m.id = u.module_id
+      LEFT JOIN systems s ON s.id = u.system_id
+      WHERE e.wg_session = ?
+        AND date(h.scanned_at, '-5 hours') BETWEEN ? AND ?
+        ${scope.sql} ${extraSql}
+      ORDER BY h.scanned_at DESC
+    `;
+    rows = db.prepare(sql).all(n, from, to, ...scope.params, ...extraParams);
+    return res.json({ stage, from, to, guests: rows });
+  }
+
   const stagesToQuery = stage === 'BOLETOS'
     ? ['BOLETO_PAGO','BOLETO_ABONADO','BOLETO_NO_PAGO','BOLETO_NO_INTERESADO']
     : [stage];
@@ -516,7 +559,7 @@ router.get('/funnel/guests', requireAuth, (req, res) => {
       ${scope.sql} ${extraSql}
     ORDER BY h.scanned_at DESC
   `;
-  const rows = db.prepare(sql).all(...stagesToQuery, from, to, ...scope.params, ...extraParams);
+  rows = db.prepare(sql).all(...stagesToQuery, from, to, ...scope.params, ...extraParams);
 
   // Si es BOLETOS, ordenar Pago → Abonado → NoPago → NoInteresado, luego por fecha desc.
   if (stage === 'BOLETOS') {

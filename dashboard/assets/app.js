@@ -596,7 +596,22 @@
       `;
     }).join('');
 
-    $('funnel-list').innerHTML = inputsHtml + funnelHtml;
+    // WG sessions: 9 barras (WG1..WG9). WG1 incluye PT del día (via wg_session=1).
+    const wgs = data.wg_sessions || {};
+    const wgMax = Math.max(...Object.values(wgs), 1);
+    const wgHtml = `
+      <div class="overline" style="margin-top:18px;">Working Group · sesiones consecutivas</div>
+      ${[1,2,3,4,5,6,7,8,9].map((n) => {
+        const c = wgs[`WG${n}`] || 0;
+        const w = (c / wgMax) * 100;
+        return `<div class="funnel-row" data-stage="WG${n}" style="cursor:pointer;">
+          <div class="funnel-label">WG${n}${n === 1 ? ' <span class="muted" style="font-size:10px;">+ PT</span>' : ''}</div>
+          <div class="funnel-bar"><div class="funnel-fill" style="width:${w}%;background:linear-gradient(90deg,#7AC1FF,#4FE3A0);"></div></div>
+          <div class="funnel-count">${c}</div>
+        </div>`;
+      }).join('')}`;
+
+    $('funnel-list').innerHTML = inputsHtml + funnelHtml + wgHtml;
 
     // Click en cualquier barra → modal con la lista de invitados de esa etapa en el rango.
     $('funnel-list').querySelectorAll('.funnel-row[data-stage]').forEach((row) => {
@@ -608,6 +623,9 @@
     REGISTRO:'Book', BOM:'Show B.O.M', BOLETOS:'Boletos', BIT:'B.I.T',
     POWER_TALK:'Power Talk', PLAN_TRABAJO:'Plan de Trabajo', FIRMADO:'Profesional Firmado',
     BOLETO_PAGO:'Pago', BOLETO_ABONADO:'Abonado', BOLETO_NO_PAGO:'No Pago', BOLETO_NO_INTERESADO:'No Interesado',
+    WG1:'Working Group · Sesión 1', WG2:'Working Group · Sesión 2', WG3:'Working Group · Sesión 3',
+    WG4:'Working Group · Sesión 4', WG5:'Working Group · Sesión 5', WG6:'Working Group · Sesión 6',
+    WG7:'Working Group · Sesión 7', WG8:'Working Group · Sesión 8', WG9:'Working Group · Sesión 9',
   };
 
   async function openFunnelStageModal(stage) {
@@ -1779,9 +1797,20 @@
         <div style="background:rgba(7,17,28,0.4);padding:10px 14px;border-radius:8px;border:1px solid var(--line);">${dayCheckboxes}</div>
       </div>
       <div class="field" id="ne-date-wrap"><label>Fecha (referencia)</label><input id="ne-date" type="date" value="${ev ? ev.date : ''}" /></div>
+      <div class="field" id="ne-wgs-wrap" style="display:none;"><label>Sesión WG (1-9, opcional)</label>
+        <input id="ne-wgs" type="number" min="1" max="9" placeholder="Ej. 1 para PT/WG1, 2 para WG2..." value="${ev && ev.wg_session ? ev.wg_session : ''}" />
+        <div class="hint" style="margin-top:4px;">WG1 incluye automáticamente los escaneos de Plan de Trabajo del mismo día.</div>
+      </div>
       <p class="hint" style="margin: 0 0 14px;">FIRMADO no aparece — es un cambio manual desde Invitados.</p>
       <button class="primary" id="save-event">${isEdit ? 'Guardar cambios' : 'Crear'}</button>
     `);
+
+    function syncWgsField() {
+      const stg = $('ne-stage').value;
+      $('ne-wgs-wrap').style.display = (stg === 'WORKING_GROUP' || stg === 'PLAN_TRABAJO') ? '' : 'none';
+    }
+    syncWgsField();
+    $('ne-stage').addEventListener('change', syncWgsField);
 
     if (!ev) $('ne-date').valueAsDate = new Date();
 
@@ -1795,12 +1824,15 @@
     $('save-event').addEventListener('click', async () => {
       try {
         const days = Array.from(document.querySelectorAll('input[name=rec-day]:checked')).map((c) => c.value);
+        const stg = $('ne-stage').value;
+        const wgsRaw = $('ne-wgs') ? $('ne-wgs').value : '';
         const body = {
           name: $('ne-name').value,
-          stage_target: $('ne-stage').value,
+          stage_target: stg,
           date: $('ne-date').value,
           recurrence_type: $('ne-type').value,
           recurrence_days: $('ne-type').value === 'weekly' ? (days.join(',') || null) : null,
+          wg_session: (stg === 'WORKING_GROUP' || stg === 'PLAN_TRABAJO') && wgsRaw ? parseInt(wgsRaw, 10) : null,
         };
         if (isEdit) {
           await api(`/api/events/${ev.id}`, { method: 'PATCH', body: JSON.stringify(body) });
