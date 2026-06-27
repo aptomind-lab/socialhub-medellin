@@ -383,6 +383,13 @@
               <option value="WORKING_GROUP">Working Group</option>
               <option value="FIRMADO">Profesional Firmado</option>
             </select>
+            <select id="guests-boleto-filter" style="max-width:200px;">
+              <option value="">Boletos: todos</option>
+              <option value="BOLETO_PAGO">Pago</option>
+              <option value="BOLETO_ABONADO">Abonado</option>
+              <option value="BOLETO_NO_PAGO">No Pago</option>
+              <option value="BOLETO_NO_INTERESADO">No Interesado</option>
+            </select>
             <select id="guests-color-filter" style="max-width:220px;">
               <option value="">Todos los colores</option>
               <option value="none">Sin color</option>
@@ -395,7 +402,7 @@
             </select>
           </div>
           <div class="table-wrap"><table class="table">
-            <thead><tr><th>Invitado</th><th>Teléfono</th><th>Distribuidor</th><th>Mód</th><th>Etapa</th><th>Color</th><th>Registrado</th><th>Último escaneo</th><th>B.I.T</th><th>WG</th><th>Acciones</th></tr></thead>
+            <thead><tr><th>Invitado</th><th>Teléfono</th><th>Distribuidor</th><th>Mód</th><th>Etapa</th><th>Boleto</th><th>Color</th><th>Registrado</th><th>Último escaneo</th><th>B.I.T</th><th>WG</th><th>Acciones</th></tr></thead>
             <tbody id="guests-tbody"></tbody>
           </table></div>
         </article>

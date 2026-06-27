@@ -615,30 +615,96 @@
     if (!range.from || !range.to) return alert('Rango de fechas no definido.');
     openModal(`${STAGE_LABEL_FRONT[stage] || stage} · ${range.from} → ${range.to}`, '<div class="muted">Cargando...</div>');
     try {
-      const r = await api(`/api/stats/funnel/guests?stage=${encodeURIComponent(stage)}&from=${range.from}&to=${range.to}`);
-      const rows = (r.guests || []).map((g) => {
-        const subTag = stage === 'BOLETOS'
-          ? `<span class="tag ${g.scan_stage === 'BOLETO_PAGO' ? 'green' : g.scan_stage === 'BOLETO_ABONADO' ? 'gold' : g.scan_stage === 'BOLETO_NO_PAGO' ? 'red' : 'gray'}">${STAGE_LABEL_FRONT[g.scan_stage] || g.scan_stage}</span>` : '';
-        const amt = (g.scan_stage === 'BOLETO_ABONADO' && g.amount != null) ? `<strong style="color:var(--gold-400);">$${g.amount}</strong>` : '';
-        return `<tr>
-          <td><strong>${g.full_name}</strong><div class="muted" style="font-size:11px;">${g.email || ''}</div></td>
-          <td class="muted" style="font-size:12px;">${g.phone || '—'}</td>
-          <td>${g.distributor_name || '—'}</td>
-          <td>${subTag}</td>
-          <td>${amt}</td>
-          <td class="muted" style="font-size:11px;">${fmtLocal(g.scanned_at)}</td>
-        </tr>`;
-      }).join('') || '<tr><td colspan="6" class="muted">Sin invitados en este rango.</td></tr>';
-      $('modal-body').innerHTML = `<div class="modal-body">
-        <div class="muted" style="font-size:12px;margin-bottom:10px;">${r.guests.length} invitado(s)</div>
-        <div class="table-wrap"><table class="table">
-          <thead><tr><th>Invitado</th><th>Teléfono</th><th>Distribuidor</th><th>Sub-etapa</th><th>Monto</th><th>Escaneado</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table></div>
-      </div>`;
+      // Pasamos los mismos filtros activos del embudo para que la lista sea consistente.
+      const filters = getFilters();
+      const qsParams = qs({ stage, from: range.from, to: range.to, ...filters });
+      const r = await api(`/api/stats/funnel/guests${qsParams}`);
+      window._shFunnelModal = { stage, guests: r.guests || [], range };
+      renderFunnelStageModal();
     } catch (e) {
       $('modal-body').innerHTML = `<div class="modal-body"><div class="error">${e.message}</div></div>`;
     }
+  }
+
+  // Renderiza el modal aplicando el filtro de sub-estado actual.
+  // Estado en window._shFunnelModal: { stage, guests, range, subFilter }.
+  function renderFunnelStageModal() {
+    const st = window._shFunnelModal;
+    if (!st) return;
+    const isBoletos = st.stage === 'BOLETOS';
+    const sub = st.subFilter || 'ALL';
+    const filtered = isBoletos && sub !== 'ALL'
+      ? st.guests.filter((g) => g.scan_stage === sub)
+      : st.guests;
+
+    const chips = isBoletos ? (() => {
+      const counts = { ALL: st.guests.length, BOLETO_PAGO: 0, BOLETO_ABONADO: 0, BOLETO_NO_PAGO: 0, BOLETO_NO_INTERESADO: 0 };
+      st.guests.forEach((g) => { counts[g.scan_stage] = (counts[g.scan_stage] || 0) + 1; });
+      const opts = [
+        ['ALL', 'Todos', 'gray'],
+        ['BOLETO_PAGO', 'Pago', 'green'],
+        ['BOLETO_ABONADO', 'Abonado', 'gold'],
+        ['BOLETO_NO_PAGO', 'No Pago', 'red'],
+        ['BOLETO_NO_INTERESADO', 'No Interesado', 'gray'],
+      ];
+      return `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
+        ${opts.map(([key, label]) =>
+          `<button class="ghost-btn fm-chip" data-sub="${key}" style="${sub === key ? 'background:var(--gold-500);color:var(--navy-900);' : ''}font-size:11px;padding:4px 10px;">${label} <strong>${counts[key] || 0}</strong></button>`
+        ).join('')}
+      </div>`;
+    })() : '';
+
+    const rows = filtered.map((g) => {
+      const subTag = isBoletos
+        ? `<span class="tag ${g.scan_stage === 'BOLETO_PAGO' ? 'green' : g.scan_stage === 'BOLETO_ABONADO' ? 'gold' : g.scan_stage === 'BOLETO_NO_PAGO' ? 'red' : 'gray'}">${STAGE_LABEL_FRONT[g.scan_stage] || g.scan_stage}</span>` : '';
+      const amt = (g.scan_stage === 'BOLETO_ABONADO' && g.amount != null) ? `<strong style="color:var(--gold-400);">$${g.amount}</strong>` : '';
+      return `<tr>
+        <td><strong>${g.full_name}</strong><div class="muted" style="font-size:11px;">${g.email || ''}</div></td>
+        <td class="muted" style="font-size:12px;">${g.phone || '—'}</td>
+        <td>${g.distributor_name || '—'}</td>
+        <td>${subTag}</td>
+        <td>${amt}</td>
+        <td class="muted" style="font-size:11px;">${fmtLocal(g.scanned_at)}</td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="6" class="muted">Sin invitados.</td></tr>';
+
+    $('modal-body').innerHTML = `<div class="modal-body" style="max-height:70vh;overflow:auto;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px;flex-wrap:wrap;">
+        <div class="muted" style="font-size:12px;">${filtered.length} de ${st.guests.length} invitado(s)</div>
+        <button class="ghost-btn" id="fm-export" style="font-size:11px;">Exportar CSV</button>
+      </div>
+      ${chips}
+      <div class="table-wrap" style="overflow-x:auto;max-width:100%;"><table class="table">
+        <thead><tr><th>Invitado</th><th>Teléfono</th><th>Distribuidor</th><th>Sub-etapa</th><th>Monto</th><th>Escaneado</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+    </div>`;
+
+    $('modal-body').querySelectorAll('.fm-chip').forEach((b) => {
+      b.addEventListener('click', () => {
+        window._shFunnelModal.subFilter = b.dataset.sub;
+        renderFunnelStageModal();
+      });
+    });
+    const exportBtn = $('fm-export');
+    if (exportBtn) exportBtn.addEventListener('click', () => exportFunnelModalCsv(filtered, st.stage));
+  }
+
+  function exportFunnelModalCsv(rows, stage) {
+    const header = ['Invitado','Email','Telefono','Distribuidor','SubEtapa','Monto','Escaneado'];
+    const data = rows.map((g) => [
+      g.full_name, g.email || '', g.phone || '', g.distributor_name || '',
+      STAGE_LABEL_FRONT[g.scan_stage] || g.scan_stage || '',
+      (g.scan_stage === 'BOLETO_ABONADO' && g.amount != null) ? g.amount : '',
+      fmtLocal(g.scanned_at),
+    ]);
+    const esc = (v) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+    const csv = [header, ...data].map((r) => r.map(esc).join(',')).join('\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `embudo-${stage}-${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
   }
 
   // ============ TEAM (vista detallada por rol) ============
@@ -1286,8 +1352,9 @@
     }
     const scanFrom = sf ? sf.value : '';
     const scanTo   = st ? st.value : '';
+    const boletoSub = $('guests-boleto-filter') ? $('guests-boleto-filter').value : '';
     const [data, wgList] = await Promise.all([
-      api('/api/guests' + qs({ ...f, q: query, color: colorFilter || undefined, stage: stageFilter || undefined, scan_from: scanFrom || undefined, scan_to: scanTo || undefined, system_id: sysFilter || undefined, module_id: modFilter || undefined })),
+      api('/api/guests' + qs({ ...f, q: query, color: colorFilter || undefined, stage: stageFilter || undefined, scan_from: scanFrom || undefined, scan_to: scanTo || undefined, system_id: sysFilter || undefined, module_id: modFilter || undefined, boleto_sub: boletoSub || undefined })),
       api('/api/wg/guests'),
     ]);
     const wgByGuest = {};
@@ -1323,6 +1390,12 @@
       }
 
       const lastScan = fmtLocal(g.last_scan_at);
+      // Celda Boleto: sub-estado + monto si Abonado.
+      const BOLETO_CLS = { BOLETO_PAGO:'green', BOLETO_ABONADO:'gold', BOLETO_NO_PAGO:'red', BOLETO_NO_INTERESADO:'gray' };
+      const BOLETO_TXT = { BOLETO_PAGO:'Pago', BOLETO_ABONADO:'Abonado', BOLETO_NO_PAGO:'No Pago', BOLETO_NO_INTERESADO:'No Interesado' };
+      const boletoCell = g.boleto_sub_stage
+        ? `<span class="tag ${BOLETO_CLS[g.boleto_sub_stage] || 'gray'}" style="font-size:10px;">${BOLETO_TXT[g.boleto_sub_stage] || '—'}</span>${g.boleto_sub_stage === 'BOLETO_ABONADO' && g.boleto_amount != null ? ` <strong style="font-size:11px;color:var(--gold-400);">$${g.boleto_amount}</strong>` : ''}`
+        : `<span class="muted" style="font-size:11px;">—</span>`;
       return `
         <tr data-action="show-history" data-id="${g.id}" data-name="${g.full_name.replace(/"/g, '&quot;')}" style="cursor:pointer;">
           <td><strong>${g.full_name}</strong><div class="muted" style="font-size:12px;">${g.email || '—'}</div></td>
@@ -1330,6 +1403,7 @@
           <td>${g.distributor_name}</td>
           <td>${g.module_number ? `M${g.module_number}` : '—'}</td>
           <td onclick="if(event.target.closest('[data-action=edit-stage]'))event.stopPropagation();">${stageTag}</td>
+          <td>${boletoCell}</td>
           <td>${colorChip(g.color, g.color_manual)}</td>
           <td class="muted" style="font-size:12px;">${(g.created_at || '').slice(0, 10)}</td>
           <td class="muted" style="font-size:12px;">${lastScan}</td>
@@ -1338,7 +1412,7 @@
           <td onclick="event.stopPropagation();">${actions}</td>
         </tr>
       `;
-    }).join('') : '<tr><td colspan="11" class="muted">Sin invitados en el rango seleccionado.</td></tr>';
+    }).join('') : '<tr><td colspan="12" class="muted">Sin invitados en el rango seleccionado.</td></tr>';
 
     $('guests-tbody').querySelectorAll('[data-action=mark-signed]').forEach((b) => {
       b.addEventListener('click', () => openSignModal(b.dataset.id, b.dataset.name));
@@ -1480,7 +1554,7 @@
   // Listeners de filtros de la vista Invitados (color + fechas)
   document.addEventListener('change', (e) => {
     if (!e.target) return;
-    if (['guests-color-filter','guests-stage-filter','guests-scan-from','guests-scan-to','guests-system-filter','guests-module-filter'].includes(e.target.id)) {
+    if (['guests-color-filter','guests-stage-filter','guests-boleto-filter','guests-scan-from','guests-scan-to','guests-system-filter','guests-module-filter'].includes(e.target.id)) {
       loadGuests($('guest-search').value);
     }
   });

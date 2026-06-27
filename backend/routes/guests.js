@@ -109,7 +109,7 @@ router.post('/register', registerLimiter, async (req, res) => {
 
 // LISTA — filtrada por jerarquía. Joins contra users (distributor) para aplicar scope
 router.get('/', requireAuth, (req, res) => {
-  const { module_id, system_id, stage, distributor_id, from, to, q, color, scan_from, scan_to } = req.query;
+  const { module_id, system_id, stage, distributor_id, from, to, q, color, scan_from, scan_to, boleto_sub } = req.query;
   const scope = scopeUsersClause(req.user, 'u');
   let sql = `
     SELECT g.*, u.full_name AS distributor_name, u.distributor_code,
@@ -117,7 +117,15 @@ router.get('/', requireAuth, (req, res) => {
            pl.full_name AS productive_leader_name,
            CASE WHEN g.bit_date IS NOT NULL AND g.current_stage != 'FIRMADO'
                 THEN CAST(julianday('now') - julianday(g.bit_date) AS INTEGER) END AS days_since_bit,
-           (SELECT MAX(scanned_at) FROM stage_history sh WHERE sh.guest_id = g.id) AS last_scan_at
+           (SELECT MAX(scanned_at) FROM stage_history sh WHERE sh.guest_id = g.id) AS last_scan_at,
+           -- Último scan de cualquier sub-estado BOLETO + monto si fue Abonado.
+           (SELECT to_stage FROM stage_history sh
+              WHERE sh.guest_id = g.id
+                AND sh.to_stage IN ('BOLETO_PAGO','BOLETO_ABONADO','BOLETO_NO_PAGO','BOLETO_NO_INTERESADO')
+              ORDER BY sh.scanned_at DESC LIMIT 1) AS boleto_sub_stage,
+           (SELECT amount FROM stage_history sh
+              WHERE sh.guest_id = g.id AND sh.to_stage = 'BOLETO_ABONADO'
+              ORDER BY sh.scanned_at DESC LIMIT 1) AS boleto_amount
     FROM guests g
     JOIN users u ON u.id = g.distributor_id
     LEFT JOIN modules m ON m.id = u.module_id
@@ -162,6 +170,14 @@ router.get('/', requireAuth, (req, res) => {
   if (q) {
     sql += ' AND (g.full_name LIKE ? OR g.email LIKE ? OR g.phone LIKE ?)';
     const like = `%${q}%`; params.push(like, like, like);
+  }
+  // Filtro por sub-estado de boleto: aplica sobre el último scan boleto del guest.
+  if (boleto_sub) {
+    sql += ` AND (SELECT to_stage FROM stage_history sh
+                   WHERE sh.guest_id = g.id
+                     AND sh.to_stage IN ('BOLETO_PAGO','BOLETO_ABONADO','BOLETO_NO_PAGO','BOLETO_NO_INTERESADO')
+                   ORDER BY sh.scanned_at DESC LIMIT 1) = ?`;
+    params.push(boleto_sub);
   }
   sql += ' ORDER BY last_scan_at DESC NULLS LAST, g.created_at DESC LIMIT 500';
   res.json({ guests: db.prepare(sql).all(...params) });
