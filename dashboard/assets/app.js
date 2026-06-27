@@ -521,19 +521,39 @@
 
   // ============ FUNNEL ============
   async function loadFunnel() {
-    // Defaults de rango: mes actual.
+    const mode = $('funnel-mode') ? $('funnel-mode').value : 'month';
     const fFrom = $('funnel-from'), fTo = $('funnel-to');
-    if (fFrom && fTo && !fFrom.value && !fTo.value) {
+    const fmt = (d) => d.toISOString().slice(0, 10);
+
+    // Auto-rellenar fechas según modo (a menos que sea 'custom').
+    if (mode !== 'custom') {
+      const now = new Date();
+      if (mode === 'week') {
+        const dow = now.getUTCDay(); // 0=Dom
+        const monday = new Date(now); monday.setUTCDate(now.getUTCDate() - ((dow + 6) % 7));
+        const sunday = new Date(monday); sunday.setUTCDate(monday.getUTCDate() + 6);
+        fFrom.value = fmt(monday); fTo.value = fmt(sunday);
+      } else {
+        // month o bit_cycle: usamos el mes actual como base
+        const y = now.getUTCFullYear(), m = now.getUTCMonth();
+        fFrom.value = fmt(new Date(Date.UTC(y, m, 1)));
+        fTo.value   = fmt(new Date(Date.UTC(y, m + 1, 0)));
+      }
+    } else if (!fFrom.value || !fTo.value) {
       const now = new Date();
       const y = now.getUTCFullYear(), m = now.getUTCMonth();
-      const fmt = (d) => d.toISOString().slice(0, 10);
       fFrom.value = fmt(new Date(Date.UTC(y, m, 1)));
       fTo.value   = fmt(new Date(Date.UTC(y, m + 1, 0)));
     }
-    const rangeParams = (fFrom && fTo && fFrom.value && fTo.value)
-      ? { from: fFrom.value, to: fTo.value } : {};
-    const data = await api('/api/stats/funnel' + qs({ ...getFilters(), ...rangeParams }));
+
+    const rangeParams = { from: fFrom.value, to: fTo.value };
     window._shFunnelRange = rangeParams;
+
+    if (mode === 'bit_cycle') {
+      return loadBitCycle(rangeParams);
+    }
+
+    const data = await api('/api/stats/funnel' + qs({ ...getFilters(), ...rangeParams }));
     const max = Math.max(...data.funnel.map((s) => s.count), 1);
 
     // Inputs: mensajes y TikTok leads → books (rama de entrada al embudo).
@@ -706,6 +726,86 @@
     });
     const exportBtn = $('fm-export');
     if (exportBtn) exportBtn.addEventListener('click', () => exportFunnelModalCsv(filtered, st.stage));
+  }
+
+  // ============ CICLO B.I.T ============
+  // Cohort: invitados que llegaron a BIT dentro del rango. Traza recorrido hasta Firmado o inactivo.
+  async function loadBitCycle(range) {
+    const STAGE_LBL = { REGISTRO:'Book', BOM:'Show B.O.M', BIT:'B.I.T', POWER_TALK:'Power Talk',
+      PLAN_TRABAJO:'Plan de Trabajo', FIRMADO:'Firmado',
+      BOLETO_PAGO:'Boleto Pago', BOLETO_ABONADO:'Boleto Abonado', BOLETO_NO_PAGO:'Boleto No Pago',
+      BOLETO_NO_INTERESADO:'Boleto No Interesado' };
+    $('funnel-list').innerHTML = '<div class="muted">Cargando ciclo B.I.T...</div>';
+    try {
+      const data = await api('/api/stats/funnel/bit-cycle' + qs({ ...getFilters(), ...range }));
+      const pct = data.stage_pct || {};
+      const sc = data.stage_counts || {};
+      const stuck = data.stuck_counts || {};
+      const total = data.total || 0;
+
+      // Barras de cohort: cuántos de los que llegaron a BIT continuaron.
+      const cohortBars = `
+        <div class="overline">Ciclo B.I.T · ${total} invitado(s)</div>
+        <div class="hint" style="margin-bottom:10px;">Cohorte: invitados cuyo B.I.T ocurrió entre ${range.from} y ${range.to}. Inactivo = 3 días hábiles sin escaneo y no firmado.</div>
+        ${['BIT','POWER_TALK','PLAN_TRABAJO','FIRMADO'].map((s) => {
+          const c = sc[s] || 0;
+          const p = pct[s] || 0;
+          const w = total ? (c / total) * 100 : 0;
+          return `<div class="funnel-row">
+            <div class="funnel-label">${STAGE_LBL[s]}</div>
+            <div class="funnel-bar"><div class="funnel-fill" style="width:${w}%"></div></div>
+            <div class="funnel-count">${c}</div>
+            <div class="funnel-convo ${p >= 50 ? 'good' : p >= 25 ? 'mid' : 'low'}">${p}%</div>
+          </div>`;
+        }).join('')}
+        <div class="funnel-row" style="border-top:1px solid var(--line);margin-top:8px;padding-top:8px;">
+          <div class="funnel-label" style="color:#FF8B95;">Inactivos</div>
+          <div class="funnel-bar"><div class="funnel-fill" style="width:${total ? (sc.INACTIVE/total)*100 : 0}%;background:#FF8B95;"></div></div>
+          <div class="funnel-count">${sc.INACTIVE || 0}</div>
+          <div class="funnel-convo low">${pct.INACTIVE || 0}%</div>
+        </div>
+      `;
+
+      // Tabla de cohort
+      const rows = (data.cohort || []).map((g) => {
+        const lastScan = fmtLocal(g.last_scan_at);
+        const statusTag = g.current_stage === 'FIRMADO'
+          ? '<span class="tag green">✦ Firmado</span>'
+          : g.inactive
+            ? `<span class="tag red">Inactivo · ${STAGE_LBL[g.stuck_at] || g.stuck_at || '—'}</span>`
+            : `<span class="tag gold">En curso · ${STAGE_LBL[g.current_stage] || g.current_stage}</span>`;
+        return `<tr>
+          <td><strong>${g.full_name}</strong><div class="muted" style="font-size:11px;">${g.email || ''}</div></td>
+          <td>${g.distributor_name || '—'}</td>
+          <td>${g.module_number ? `M${g.module_number}` : '—'}</td>
+          <td class="muted" style="font-size:11px;">${g.bit_date || '—'}</td>
+          <td class="muted" style="font-size:11px;">${g.power_talk_date || '—'}</td>
+          <td class="muted" style="font-size:11px;">${g.plan_trabajo_date || '—'}</td>
+          <td class="muted" style="font-size:11px;">${g.signed_at ? String(g.signed_at).slice(0,10) : '—'}</td>
+          <td class="muted" style="font-size:11px;">${lastScan}</td>
+          <td>${statusTag}</td>
+        </tr>`;
+      }).join('') || '<tr><td colspan="9" class="muted">Sin invitados en este ciclo.</td></tr>';
+
+      // Resumen de "se quedaron en"
+      const stuckEntries = Object.entries(stuck).sort((a, b) => b[1] - a[1]);
+      const stuckHtml = stuckEntries.length ? `
+        <div class="overline" style="margin-top:18px;">Inactivos · etapa donde se quedaron</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          ${stuckEntries.map(([s, c]) => `<span class="tag red">${STAGE_LBL[s] || s}: <strong>${c}</strong></span>`).join('')}
+        </div>` : '';
+
+      $('funnel-list').innerHTML = `
+        ${cohortBars}
+        ${stuckHtml}
+        <div class="table-wrap" style="margin-top:18px;overflow-x:auto;"><table class="table">
+          <thead><tr><th>Invitado</th><th>Distribuidor</th><th>Mód</th><th>B.I.T</th><th>P.Talk</th><th>P.Trabajo</th><th>Firmado</th><th>Último escaneo</th><th>Estado</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table></div>
+      `;
+    } catch (e) {
+      $('funnel-list').innerHTML = `<div class="error">${e.message}</div>`;
+    }
   }
 
   function exportFunnelModalCsv(rows, stage) {
@@ -1576,24 +1676,10 @@
       loadGuests($('guest-search').value);
     }
   });
-  // Listeners filtros del embudo (fechas + presets)
+  // Listeners filtros del embudo: modo (semana/mes/ciclo BIT) + fechas custom.
   document.addEventListener('change', (e) => {
-    if (e.target && (e.target.id === 'funnel-from' || e.target.id === 'funnel-to')) loadFunnel();
-  });
-  document.addEventListener('click', (e) => {
-    if (!e.target || !e.target.id) return;
-    if (e.target.id === 'funnel-preset-week') {
-      const w = (typeof weekRangeISO === 'function') ? weekRangeISO() : null;
-      if (w) { $('funnel-from').value = w.from; $('funnel-to').value = w.to; loadFunnel(); }
-    }
-    if (e.target.id === 'funnel-preset-month') {
-      const now = new Date();
-      const y = now.getUTCFullYear(), m = now.getUTCMonth();
-      const fmt = (d) => d.toISOString().slice(0, 10);
-      $('funnel-from').value = fmt(new Date(Date.UTC(y, m, 1)));
-      $('funnel-to').value   = fmt(new Date(Date.UTC(y, m + 1, 0)));
-      loadFunnel();
-    }
+    if (!e.target) return;
+    if (e.target.id === 'funnel-mode' || e.target.id === 'funnel-from' || e.target.id === 'funnel-to') loadFunnel();
   });
 
   document.addEventListener('click', async (e) => {

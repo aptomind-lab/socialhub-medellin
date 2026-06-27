@@ -569,4 +569,94 @@ router.get('/funnel/guests', requireAuth, (req, res) => {
   res.json({ stage, from, to, guests: rows });
 });
 
+// Ciclo B.I.T: cohort de guests cuyo primer BIT cae en el rango. Para cada uno:
+//   - fechas clave (BIT/PT/PLAN_TRABAJO/FIRMADO)
+//   - último escaneo y si está inactivo (3 días hábiles sin scan, no firmado)
+//   - etapa en la que se inactivaron (la más alta alcanzada)
+router.get('/funnel/bit-cycle', requireAuth, (req, res) => {
+  const { from, to, module_id, productive_leader_id, distributor_id } = req.query;
+  if (!from || !to) return res.status(400).json({ error: 'from, to son obligatorios' });
+  const scope = scopeUsersClause(req.user, 'u');
+
+  const extraFilters = [];
+  const extraParams = [];
+  if (module_id) {
+    const m = db.prepare('SELECT system_id FROM modules WHERE id = ?').get(module_id);
+    const allowed =
+      req.user.role === 'lider_supremo' ||
+      (req.user.role === 'system_leader' && m && m.system_id === req.user.system_id) ||
+      parseInt(module_id, 10) === req.user.module_id;
+    if (allowed) { extraFilters.push('u.module_id = ?'); extraParams.push(module_id); }
+  }
+  if (productive_leader_id) { extraFilters.push('(u.productive_leader_id = ? OR u.id = ?)'); extraParams.push(productive_leader_id, productive_leader_id); }
+  if (distributor_id) { extraFilters.push('u.id = ?'); extraParams.push(distributor_id); }
+  const extraSql = extraFilters.length ? ' AND ' + extraFilters.join(' AND ') : '';
+
+  const guests = db.prepare(`
+    SELECT g.id, g.full_name, g.email, g.phone, g.current_stage,
+           g.bit_date, g.power_talk_date, g.signed_at,
+           u.full_name AS distributor_name,
+           m.number AS module_number,
+           (SELECT MAX(scanned_at) FROM stage_history sh WHERE sh.guest_id = g.id) AS last_scan_at,
+           (SELECT MIN(date(scanned_at, '-5 hours')) FROM stage_history sh
+              WHERE sh.guest_id = g.id AND sh.to_stage = 'PLAN_TRABAJO') AS plan_trabajo_date
+    FROM guests g
+    JOIN users u ON u.id = g.distributor_id
+    LEFT JOIN modules m ON m.id = u.module_id
+    WHERE g.bit_date IS NOT NULL
+      AND g.bit_date BETWEEN ? AND ?
+      ${scope.sql} ${extraSql}
+    ORDER BY g.bit_date DESC
+  `).all(from, to, ...scope.params, ...extraParams);
+
+  // 3 días hábiles desde hoy (Colombia local). Lun-Vie.
+  function businessDaysAgo(n) {
+    const d = new Date();
+    // Convertir a Colombia local restando 5h
+    d.setUTCHours(d.getUTCHours() - 5);
+    let remaining = n;
+    while (remaining > 0) {
+      d.setUTCDate(d.getUTCDate() - 1);
+      const dow = d.getUTCDay();
+      if (dow !== 0 && dow !== 6) remaining--;
+    }
+    return d.toISOString().slice(0, 10);
+  }
+  const inactiveThreshold = businessDaysAgo(3);
+
+  const STAGE_ORDER = { REGISTRO:0, BOM:1, BOLETO_PAGO:2, BOLETO_ABONADO:2, BOLETO_NO_PAGO:2, BOLETO_NO_INTERESADO:2, BIT:3, POWER_TALK:4, PLAN_TRABAJO:5, FIRMADO:6 };
+  const cohort = guests.map((g) => {
+    const lastScanDate = g.last_scan_at ? String(g.last_scan_at).slice(0, 10) : null;
+    const isSigned = g.current_stage === 'FIRMADO';
+    const inactive = !isSigned && lastScanDate && lastScanDate < inactiveThreshold;
+    return {
+      ...g,
+      last_scan_date: lastScanDate,
+      inactive: !!inactive,
+      stuck_at: inactive ? g.current_stage : null,
+    };
+  });
+
+  // Conteos por etapa dentro del cohort (porcentaje sobre total cohort).
+  const total = cohort.length;
+  const stageCounts = { BIT: total, POWER_TALK: 0, PLAN_TRABAJO: 0, FIRMADO: 0, INACTIVE: 0 };
+  cohort.forEach((g) => {
+    if (g.power_talk_date) stageCounts.POWER_TALK++;
+    if (g.plan_trabajo_date) stageCounts.PLAN_TRABAJO++;
+    if (g.signed_at) stageCounts.FIRMADO++;
+    if (g.inactive) stageCounts.INACTIVE++;
+  });
+  const stagePct = {};
+  Object.entries(stageCounts).forEach(([k, v]) => { stagePct[k] = total ? Math.round((v / total) * 1000) / 10 : 0; });
+
+  // Conteo de "se quedaron en" — por etapa más alta alcanzada de los inactivos.
+  const stuckCounts = {};
+  cohort.filter((g) => g.inactive).forEach((g) => {
+    const s = g.stuck_at || 'UNKNOWN';
+    stuckCounts[s] = (stuckCounts[s] || 0) + 1;
+  });
+
+  res.json({ from, to, total, cohort, stage_counts: stageCounts, stage_pct: stagePct, stuck_counts: stuckCounts });
+});
+
 module.exports = router;

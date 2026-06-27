@@ -255,12 +255,16 @@
         <h2 class="view-title">Embudo de prospección</h2>
         <article class="panel">
           <div class="filter-bar" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;max-width:none;margin-bottom:18px;">
-            <label style="font-size:11px;letter-spacing:1.5px;color:var(--muted);">Rango:</label>
+            <label style="font-size:11px;letter-spacing:1.5px;color:var(--muted);">Ver por:</label>
+            <select id="funnel-mode" style="max-width:180px;">
+              <option value="custom">Rango personalizado</option>
+              <option value="week">Semana actual</option>
+              <option value="month" selected>Mes actual</option>
+              <option value="bit_cycle">Ciclo B.I.T</option>
+            </select>
             <input type="date" id="funnel-from" style="max-width:160px;" />
             <span class="muted">→</span>
             <input type="date" id="funnel-to" style="max-width:160px;" />
-            <button class="ghost-btn" id="funnel-preset-week" type="button">Esta semana</button>
-            <button class="ghost-btn" id="funnel-preset-month" type="button">Este mes</button>
           </div>
           <div id="funnel-list"></div>
         </article>
