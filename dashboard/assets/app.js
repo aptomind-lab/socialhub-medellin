@@ -967,7 +967,7 @@
   async function loadWG() {
     try {
       const filter = $('wg-filter').value || '';
-      const data = await api('/api/wg/calendar' + qs({ filter: filter || undefined }));
+      const data = await api('/api/wg/calendar' + qs({ filter: filter || undefined, module_id: getFilters().module_id }));
       $('wg-solid').textContent = data.summary.solid;
       $('wg-irregular').textContent = data.summary.irregular;
       $('wg-orange').textContent = data.summary.orange;
@@ -1029,7 +1029,12 @@
     const canManage = me.role === 'lider_supremo' || me.role === 'system_leader';
     const showSystemCol = me.role === 'lider_supremo';
     const sysTh = $('modules-sys-th'); if (sysTh) sysTh.hidden = !showSystemCol;
-    $('modules-tbody').innerHTML = data.modules.map((m) => {
+    // Filtro topbar: si hay módulo seleccionado, mostrar solo ese módulo en la tabla.
+    const topbarModule = getFilters().module_id;
+    const visibleModules = topbarModule
+      ? data.modules.filter((m) => String(m.id) === String(topbarModule))
+      : data.modules;
+    $('modules-tbody').innerHTML = visibleModules.map((m) => {
       const sysCell = showSystemCol ? `<td><span class="muted" style="font-size:12px;">${m.system_name || '—'}</span></td>` : '';
       const editBtn = me.role === 'lider_supremo'
         ? `<button class="ghost-btn" data-action="edit-mod" data-id="${m.id}" data-number="${m.number}" data-name="${m.name.replace(/"/g, '&quot;')}" data-system-id="${m.system_id || ''}">Editar</button>`
@@ -1251,7 +1256,7 @@
   async function loadUsers() {
     if (!cachedModules.length) await loadModules();
     const role = $('users-role-filter').value;
-    const data = await api('/api/users' + qs({ role }));
+    const data = await api('/api/users' + qs({ role, module_id: getFilters().module_id }));
     cachedDistributors = data.users.filter((u) => u.role === 'distributor');
     cachedProductiveLeaders = data.users.filter((u) => u.role === 'productive_leader');
 
@@ -1545,8 +1550,10 @@
     const scanFrom = sf ? sf.value : '';
     const scanTo   = st ? st.value : '';
     const boletoSub = $('guests-boleto-filter') ? $('guests-boleto-filter').value : '';
+    // Filtro de módulo: el dropdown propio de la sección (si está) gana sobre el topbar.
+    const effectiveModule = modFilter || f.module_id || undefined;
     const [data, wgList] = await Promise.all([
-      api('/api/guests' + qs({ ...f, q: query, color: colorFilter || undefined, stage: stageFilter || undefined, scan_from: scanFrom || undefined, scan_to: scanTo || undefined, system_id: sysFilter || undefined, module_id: modFilter || undefined, boleto_sub: boletoSub || undefined })),
+      api('/api/guests' + qs({ ...f, q: query, color: colorFilter || undefined, stage: stageFilter || undefined, scan_from: scanFrom || undefined, scan_to: scanTo || undefined, system_id: sysFilter || undefined, module_id: effectiveModule, boleto_sub: boletoSub || undefined })),
       api('/api/wg/guests'),
     ]);
     const wgByGuest = {};
