@@ -207,10 +207,20 @@ router.patch('/:id', requireAuth, (req, res) => {
   if (full_name !== undefined) { fields.push('full_name = ?'); values.push(full_name); }
   if (email !== undefined)     { fields.push('email = ?');     values.push(email ? email.toLowerCase().trim() : null); }
   if (phone !== undefined)     { fields.push('phone = ?');     values.push(phone); }
-  // Solo lider_supremo puede cambiar rol (es cambio de jerarquía).
-  if (role !== undefined && req.user.role === 'lider_supremo') {
+  // Cambio de rol (jerarquía):
+  //   lider_supremo → cualquier rol.
+  //   system_leader → solo module_leader, productive_leader, distributor (no puede crear pares ni superiores).
+  //   resto         → no permitido.
+  if (role !== undefined) {
     const validRoles = ['lider_supremo','system_leader','module_leader','productive_leader','distributor'];
     if (!validRoles.includes(role)) return res.status(400).json({ error: 'Rol inválido' });
+    const SL_ASSIGNABLE = ['module_leader','productive_leader','distributor'];
+    const canChangeRole =
+      req.user.role === 'lider_supremo' ||
+      (req.user.role === 'system_leader' && SL_ASSIGNABLE.includes(role));
+    if (!canChangeRole) {
+      return res.status(403).json({ error: 'No puedes asignar este rol' });
+    }
     fields.push('role = ?'); values.push(role);
   }
   // Solo lider_supremo puede mover usuarios entre sistemas.

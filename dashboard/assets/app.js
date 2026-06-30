@@ -1197,6 +1197,57 @@
     cachedProductiveLeaders = users.filter((u) => u.role === 'productive_leader');
   }
 
+  const ROLE_LABEL = {
+    lider_supremo: 'Líder Supremo',
+    system_leader: 'Líder de Sistema',
+    module_leader: 'Líder de Módulo',
+    productive_leader: 'Líder Productivo',
+    distributor: 'Profesional',
+  };
+  function canEditRoleOf(target) {
+    if (!me || target.id === me.id) return false;
+    if (me.role === 'lider_supremo') return true;
+    if (me.role === 'system_leader') {
+      if (target.role === 'lider_supremo') return false;
+      return target.system_id === me.system_id;
+    }
+    return false;
+  }
+  function assignableRoles() {
+    if (me?.role === 'lider_supremo') {
+      return ['lider_supremo','system_leader','module_leader','productive_leader','distributor'];
+    }
+    if (me?.role === 'system_leader') {
+      return ['module_leader','productive_leader','distributor'];
+    }
+    return [];
+  }
+  function openRoleEditor(span) {
+    const id = span.dataset.id;
+    const current = span.dataset.role;
+    const opts = assignableRoles()
+      .map((r) => `<option value="${r}"${r === current ? ' selected' : ''}>${ROLE_LABEL[r]}</option>`)
+      .join('');
+    const sel = document.createElement('select');
+    sel.className = 'role-inline-select';
+    sel.innerHTML = opts;
+    span.replaceWith(sel);
+    sel.focus();
+    let done = false;
+    const finish = async (commit) => {
+      if (done) return; done = true;
+      if (commit && sel.value !== current) {
+        try {
+          await api(`/api/users/${id}`, { method: 'PATCH', body: JSON.stringify({ role: sel.value }) });
+        } catch (err) { alert(err.message); }
+      }
+      loadUsers();
+    };
+    sel.addEventListener('change', () => finish(true));
+    sel.addEventListener('blur', () => finish(false));
+    sel.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); finish(false); } });
+  }
+
   async function loadUsers() {
     if (!cachedModules.length) await loadModules();
     const role = $('users-role-filter').value;
@@ -1219,7 +1270,9 @@
       return `
         <tr>
           <td><strong>${u.full_name}</strong>${u.email ? `<div class="muted" style="font-size:12px;">${u.email}</div>` : ''}</td>
-          <td><span class="tag gold">${u.role_label}</span></td>
+          <td>${canEditRoleOf(u)
+            ? `<span class="tag gold role-edit" data-id="${u.id}" data-role="${u.role}" title="Click para cambiar el rol" style="cursor:pointer;">${u.role_label} ▾</span>`
+            : `<span class="tag gold">${u.role_label}</span>`}</td>
           <td>${u.bhip_rank ? `<span class="tag" style="background:rgba(46,139,139,0.18);color:var(--teal-400);border-color:rgba(70,176,168,0.3);">${u.bhip_rank}</span>` : '—'}</td>
           <td>${u.module_number ? `M${u.module_number}` : '—'}</td>
           <td>${u.productive_leader_name || '—'}</td>
@@ -1235,6 +1288,9 @@
         </tr>
       `;
     }).join('');
+    $('users-tbody').querySelectorAll('.role-edit').forEach((s) => {
+      s.addEventListener('click', () => openRoleEditor(s));
+    });
     $('users-tbody').querySelectorAll('[data-action=edit-user]').forEach((b) => {
       b.addEventListener('click', async () => {
         const r = await api(`/api/users/${b.dataset.id}`);

@@ -767,6 +767,19 @@ button.primary:hover { transform: translateY(-1px); }
   .alert-count { font-size: 22px; }
 }
 
+/* ─── Dropdown inline para cambiar rol en lista de usuarios ─── */
+.role-edit:hover { background: rgba(201, 162, 74, 0.28); }
+.role-inline-select {
+  background: #0B1B2B;
+  color: var(--gold-400, #C9A24A);
+  border: 1px solid rgba(201, 162, 74, 0.5);
+  border-radius: 6px;
+  padding: 3px 6px;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
 /* ─── Overlay de usuario desactivado ─── */
 #inactive-overlay {
   position: fixed;
