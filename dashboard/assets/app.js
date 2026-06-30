@@ -1729,7 +1729,9 @@
     // Por defecto: el usuario actual
     sel.value = String(me.id);
 
-    $('msg-date').valueAsDate = new Date();
+    // Fecha por defecto en hora Colombia (UTC-5), no UTC, para que después
+    // de las 7pm Colombia no salte al día siguiente.
+    $('msg-date').value = new Date(Date.now() - 5 * 3600 * 1000).toISOString().slice(0, 10);
     await prefillMessageForm();
 
     const data = await api('/api/messages/totals' + qs(getFilters()));
@@ -1751,20 +1753,38 @@
       : '<tr><td colspan="10" class="muted">Sin registros aún.</td></tr>';
   }
 
-  // Pre-llena AMBOS forms (mensajes + tiktok) con el registro existente del usuario+fecha.
+  // Resetea inputs y muestra los totales acumulados del usuario+fecha en el hint.
+  // Cada submisión es un delta que el backend suma al acumulado del día.
   async function prefillMessageForm() {
     const uid = parseInt($('msg-user').value, 10);
     const date = $('msg-date').value;
+    $('msg-count').value = '';
+    $('msg-books').value = 0;
+    if ($('msg-leads'))  $('msg-leads').value  = 0;
+    if ($('tt-minutes')) $('tt-minutes').value = '';
+    if ($('tt-leads'))   $('tt-leads').value   = 0;
+    if ($('tt-books'))   $('tt-books').value   = 0;
+    const msgHint = $('msg-existing');
+    const ttHint  = $('tt-existing');
+    if (msgHint) msgHint.textContent = '';
+    if (ttHint)  ttHint.textContent  = '';
     if (!uid || !date) return;
     try {
       const r = await api(`/api/messages/user/${uid}`);
       const found = (r.messages || []).find((m) => m.date === date);
-      $('msg-count').value = found ? found.count : '';
-      $('msg-books').value = found ? (found.books || found.books_count || 0) : 0;
-      if ($('msg-leads')) $('msg-leads').value = found ? (found.messages_leads || 0) : 0;
-      if ($('tt-minutes')) $('tt-minutes').value = found ? (found.tiktok_minutes || 0) : 0;
-      if ($('tt-leads'))   $('tt-leads').value   = found ? (found.tiktok_leads   || 0) : 0;
-      if ($('tt-books'))   $('tt-books').value   = found ? (found.tiktok_books   || 0) : 0;
+      if (!found) return;
+      if (msgHint) {
+        const m = found.messages || found.count || 0;
+        const b = found.books || found.books_count || 0;
+        const l = found.messages_leads || 0;
+        msgHint.textContent = `Ya registrado ese día: ${m} msgs · ${l} leads · ${b} books. Lo que guardes ahora se suma.`;
+      }
+      if (ttHint) {
+        const tm = found.tiktok_minutes || 0;
+        const tl = found.tiktok_leads || 0;
+        const tb = found.tiktok_books || 0;
+        ttHint.textContent = `Ya registrado ese día: ${tm} min · ${tl} leads · ${tb} books. Lo que guardes ahora se suma.`;
+      }
     } catch (e) { /* silent */ }
   }
   document.addEventListener('change', (e) => {
@@ -1784,11 +1804,11 @@
           messages_leads: parseInt(($('msg-leads')||{}).value, 10) || 0,
         }),
       });
-      loadMessages();
+      await loadMessages();
     } catch (err) { alert(err.message); }
   });
 
-  // Form TikTok Live — actualiza solo los campos tiktok_*, preserva mensajes/books.
+  // Form TikTok Live — suma a los campos tiktok_*; mensajes/books quedan intactos.
   if ($('tiktok-form')) {
     $('tiktok-form').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -1803,7 +1823,7 @@
             tiktok_books:   parseInt(($('tt-books')||{}).value, 10) || 0,
           }),
         });
-        loadMessages();
+        await loadMessages();
       } catch (err) { alert(err.message); }
     });
   }

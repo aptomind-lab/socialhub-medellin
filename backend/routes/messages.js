@@ -2,10 +2,12 @@
 // Tabla: daily_activity con UPSERT por (user_id, date).
 // Endpoint mantiene compatibilidad: si solo llegan `count` y `books_count` (Tipo A),
 // se preservan los campos TikTok existentes para esa fecha.
+// Las submissions del mismo día acumulan: cada POST suma sus valores a lo ya registrado.
 const express = require('express');
 const db = require('../db');
 const { requireAuth, scopeUsersClause } = require('../middleware/auth');
 const { refreshUserBlock } = require('../utils/blocking');
+const { localDate } = require('../utils/tz');
 const gam = require('../utils/gamification');
 
 const router = express.Router();
@@ -20,7 +22,7 @@ function clampInt(v, def = 0) {
 router.post('/', requireAuth, (req, res) => {
   let { user_id, date, count, books_count, messages, books, tiktok_minutes, tiktok_leads, messages_leads, tiktok_books } = req.body || {};
   if (!user_id) user_id = req.user.id;
-  if (!date) return res.status(400).json({ error: 'date es requerido' });
+  if (!date) date = localDate();
 
   const target = db.prepare('SELECT * FROM users WHERE id = ?').get(user_id);
   if (!target) return res.status(404).json({ error: 'Usuario no encontrado' });
@@ -38,17 +40,25 @@ router.post('/', requireAuth, (req, res) => {
     WHERE user_id = ? AND date = ?
   `).get(user_id, date) || { messages: 0, books: 0, tiktok_minutes: 0, tiktok_leads: 0, messages_leads: 0, tiktok_books: 0 };
 
-  // Resuelve valores finales: nuevo > viejo > existente.
-  const fMessages       = messages       !== undefined ? clampInt(messages, 0)
-                        : count          !== undefined ? clampInt(count, 0)
-                        : existing.messages;
-  const fBooks          = books          !== undefined ? clampInt(books, 0)
-                        : books_count    !== undefined ? clampInt(books_count, 0)
-                        : existing.books;
-  const fTiktokMinutes  = tiktok_minutes !== undefined ? clampInt(tiktok_minutes, 0) : existing.tiktok_minutes;
-  const fTiktokLeads    = tiktok_leads   !== undefined ? clampInt(tiktok_leads, 0)   : existing.tiktok_leads;
-  const fMessagesLeads  = messages_leads !== undefined ? clampInt(messages_leads, 0) : existing.messages_leads;
-  const fTiktokBooks    = tiktok_books   !== undefined ? clampInt(tiktok_books, 0)   : existing.tiktok_books;
+  // Cada submisión suma al acumulado del día (delta), no sobreescribe.
+  // Si el campo no llega en el body, se preserva lo existente.
+  const addMessages      = messages       !== undefined ? clampInt(messages, 0)
+                         : count          !== undefined ? clampInt(count, 0)
+                         : 0;
+  const addBooks         = books          !== undefined ? clampInt(books, 0)
+                         : books_count    !== undefined ? clampInt(books_count, 0)
+                         : 0;
+  const addTiktokMinutes = tiktok_minutes !== undefined ? clampInt(tiktok_minutes, 0) : 0;
+  const addTiktokLeads   = tiktok_leads   !== undefined ? clampInt(tiktok_leads, 0)   : 0;
+  const addMessagesLeads = messages_leads !== undefined ? clampInt(messages_leads, 0) : 0;
+  const addTiktokBooks   = tiktok_books   !== undefined ? clampInt(tiktok_books, 0)   : 0;
+
+  const fMessages       = existing.messages       + addMessages;
+  const fBooks          = existing.books          + addBooks;
+  const fTiktokMinutes  = existing.tiktok_minutes + addTiktokMinutes;
+  const fTiktokLeads    = existing.tiktok_leads   + addTiktokLeads;
+  const fMessagesLeads  = existing.messages_leads + addMessagesLeads;
+  const fTiktokBooks    = existing.tiktok_books   + addTiktokBooks;
 
   db.prepare(`
     INSERT INTO daily_activity (user_id, date, messages, books, tiktok_minutes, tiktok_leads, messages_leads, tiktok_books)
@@ -80,7 +90,7 @@ router.post('/', requireAuth, (req, res) => {
 
 // Hoy del usuario autenticado (UX para el widget topbar y forms).
 router.get('/today', requireAuth, (req, res) => {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDate();
   const row = db.prepare(`
     SELECT date, messages, books, tiktok_minutes, tiktok_leads, messages_leads, tiktok_books, created_at, updated_at
     FROM daily_activity WHERE user_id = ? AND date = ?
