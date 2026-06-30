@@ -1230,6 +1230,8 @@
   function openRoleEditor(span) {
     const id = span.dataset.id;
     const current = span.dataset.role;
+    const moduleId = span.dataset.moduleId || '';
+    const userName = span.dataset.name || '';
     const opts = assignableRoles()
       .map((r) => `<option value="${r}"${r === current ? ' selected' : ''}>${ROLE_LABEL[r]}</option>`)
       .join('');
@@ -1242,8 +1244,14 @@
     const finish = async (commit) => {
       if (done) return; done = true;
       if (commit && sel.value !== current) {
+        const newRole = sel.value;
+        // Profesional requiere un segundo paso: elegir líder de mesa.
+        if (newRole === 'distributor') {
+          await openLeaderPickerForDistributor(id, userName, moduleId);
+          return;
+        }
         try {
-          await api(`/api/users/${id}`, { method: 'PATCH', body: JSON.stringify({ role: sel.value }) });
+          await api(`/api/users/${id}`, { method: 'PATCH', body: JSON.stringify({ role: newRole }) });
         } catch (err) { alert(err.message); }
       }
       loadUsers();
@@ -1251,6 +1259,59 @@
     sel.addEventListener('change', () => finish(true));
     sel.addEventListener('blur', () => finish(false));
     sel.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); finish(false); } });
+  }
+
+  // Segundo paso del cambio de rol a Profesional: pedir líder de mesa.
+  // Si el target tiene módulo, se filtran PLs de ese módulo; si no, se listan
+  // todos los visibles para el actor (scope ya aplicado por el backend).
+  async function openLeaderPickerForDistributor(userId, userName, moduleId) {
+    let pls;
+    try {
+      const params = { role: 'productive_leader' };
+      if (moduleId) params.module_id = moduleId;
+      pls = (await api('/api/users' + qs(params))).users;
+    } catch (err) { alert(err.message); return loadUsers(); }
+
+    if (!pls.length) {
+      alert('No hay Líderes Productivos disponibles' + (moduleId ? ' en el módulo del usuario.' : '.'));
+      return loadUsers();
+    }
+
+    const opts = pls.map((pl) => {
+      const modTag = pl.module_number ? ' · M' + pl.module_number : '';
+      return `<option value="${pl.id}" data-module="${pl.module_id || ''}">${pl.full_name}${modTag}</option>`;
+    }).join('');
+
+    openModal('Asignar líder de mesa', `
+      <div class="field"><label>Profesional</label><div class="muted">${userName || '—'}</div></div>
+      <div class="field"><label>¿Quién es su líder de mesa?</label><select id="rd-pl">${opts}</select></div>
+      <div style="display:flex;gap:8px;margin-top:8px;">
+        <button class="primary" id="save-leader" style="flex:1;">Guardar</button>
+        <button class="ghost-btn" id="cancel-leader" type="button">Cancelar</button>
+      </div>
+    `);
+
+    $('save-leader').addEventListener('click', async () => {
+      const plSel = $('rd-pl');
+      const plId = parseInt(plSel.value, 10) || null;
+      if (!plId) return alert('Selecciona un líder de mesa');
+      const plModuleId = plSel.selectedOptions[0]?.dataset.module
+        ? parseInt(plSel.selectedOptions[0].dataset.module, 10)
+        : null;
+      const body = { role: 'distributor', productive_leader_id: plId };
+      // Sincroniza el módulo del usuario con el del PL elegido para mantener
+      // la jerarquía consistente (un Profesional pertenece al módulo de su mesa).
+      if (plModuleId) body.module_id = plModuleId;
+      try {
+        await api(`/api/users/${userId}`, {
+          method: 'PATCH',
+          body: JSON.stringify(body),
+        });
+        closeModal();
+        loadUsers();
+      } catch (err) { alert(err.message); }
+    });
+    $('cancel-leader').addEventListener('click', () => { closeModal(); loadUsers(); });
   }
 
   async function loadUsers() {
@@ -1276,7 +1337,7 @@
         <tr>
           <td><strong>${u.full_name}</strong>${u.email ? `<div class="muted" style="font-size:12px;">${u.email}</div>` : ''}</td>
           <td>${canEditRoleOf(u)
-            ? `<span class="tag gold role-edit" data-id="${u.id}" data-role="${u.role}" title="Click para cambiar el rol" style="cursor:pointer;">${u.role_label} ▾</span>`
+            ? `<span class="tag gold role-edit" data-id="${u.id}" data-role="${u.role}" data-module-id="${u.module_id || ''}" data-system-id="${u.system_id || ''}" data-name="${u.full_name.replace(/"/g, '&quot;')}" title="Click para cambiar el rol" style="cursor:pointer;">${u.role_label} ▾</span>`
             : `<span class="tag gold">${u.role_label}</span>`}</td>
           <td>${u.bhip_rank ? `<span class="tag" style="background:rgba(46,139,139,0.18);color:var(--teal-400);border-color:rgba(70,176,168,0.3);">${u.bhip_rank}</span>` : '—'}</td>
           <td>${u.module_number ? `M${u.module_number}` : '—'}</td>
