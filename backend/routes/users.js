@@ -233,6 +233,30 @@ router.patch('/:id', requireAuth, (req, res) => {
   res.json({ user: decorate(db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id)) });
 });
 
+// Toggle de desactivación temporal: el usuario puede seguir entrando al
+// dashboard, pero la UI muestra overlay rojo que bloquea interacción.
+// Permisos: lider_supremo (cualquier usuario), system_leader (solo su sistema).
+// Restricciones: no puedes desactivarte a ti mismo, ni desactivar a un lider_supremo.
+router.patch('/:id/toggle-active', requireAuth, (req, res) => {
+  if (!['lider_supremo', 'system_leader'].includes(req.user.role)) {
+    return res.status(403).json({ error: 'Solo Líder Supremo o Líder de Sistema pueden activar/desactivar usuarios' });
+  }
+  const target = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+  if (!target) return res.status(404).json({ error: 'Usuario no encontrado' });
+  if (target.id === req.user.id) {
+    return res.status(400).json({ error: 'No puedes desactivarte a ti mismo' });
+  }
+  if (target.role === 'lider_supremo') {
+    return res.status(403).json({ error: 'No puedes desactivar a un Líder Supremo' });
+  }
+  if (req.user.role === 'system_leader' && target.system_id !== req.user.system_id) {
+    return res.status(403).json({ error: 'Solo puedes gestionar usuarios de tu sistema' });
+  }
+  const next = target.active ? 0 : 1;
+  db.prepare('UPDATE users SET active = ? WHERE id = ?').run(next, target.id);
+  res.json({ ok: true, active: next });
+});
+
 router.post('/:id/regenerate-code', requireAuth, (req, res) => {
   const target = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!target) return res.status(404).json({ error: 'Usuario no encontrado' });

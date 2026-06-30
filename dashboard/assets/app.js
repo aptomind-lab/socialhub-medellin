@@ -53,8 +53,10 @@
   });
 
   $('logout-btn').addEventListener('click', logout);
+  if ($('inactive-logout')) $('inactive-logout').addEventListener('click', logout);
   function logout() {
     localStorage.removeItem(STORAGE_TOKEN); token = null; me = null;
+    document.body.classList.remove('inactive-user');
     showScreen('login');
   }
   function showScreen(name) {
@@ -1210,8 +1212,10 @@
         : '—';
       const pendingTag = !u.profile_completed
         ? '<span class="tag gold" title="Aún no ha completado su perfil">⌛ Pendiente</span>'
-        : (blocked ? '<span class="tag red">Bloqueado</span>'
-            : (u.active ? '<span class="tag green">Activo</span>' : '<span class="tag gray">Inactivo</span>'));
+        : (!u.active
+            ? '<span class="tag" style="background:rgba(255,59,77,0.18);color:#FF6B7A;border-color:rgba(255,59,77,0.4);">⏸ Desactivado</span>'
+            : (blocked ? '<span class="tag red">Bloqueado</span>'
+                : '<span class="tag green">Activo</span>'));
       return `
         <tr>
           <td><strong>${u.full_name}</strong>${u.email ? `<div class="muted" style="font-size:12px;">${u.email}</div>` : ''}</td>
@@ -1225,6 +1229,7 @@
           <td>${me.role === 'lider_supremo' ? `<button class="ghost-btn" data-action="edit-user" data-id="${u.id}" style="margin-right:6px;">Editar</button>` : ''}${(me.role === 'lider_supremo' || me.role === 'system_leader' || me.role === 'module_leader')
             ? `<button class="ghost-btn" data-action="edit-rank" data-id="${u.id}" data-rank="${u.bhip_rank || ''}">Rango</button>
                <button class="ghost-btn" data-action="reset-pwd" data-id="${u.id}" data-name="${u.full_name.replace(/"/g, '&quot;')}" data-email="${u.email || ''}" style="margin-left:6px;">Reset pwd</button>
+               ${(me.role === 'lider_supremo' || me.role === 'system_leader') && u.id !== me.id && u.role !== 'lider_supremo' ? `<button class="ghost-btn" data-action="toggle-active" data-id="${u.id}" data-active="${u.active ? 1 : 0}" data-name="${u.full_name.replace(/"/g, '&quot;')}" style="margin-left:6px;${u.active ? 'color:#FFB347;border-color:rgba(255,179,71,0.35);' : 'color:var(--teal-400);border-color:rgba(70,176,168,0.35);'}">${u.active ? 'Desactivar' : 'Activar'}</button>` : ''}
                ${(me.role === 'lider_supremo' || me.role === 'system_leader') && u.id !== me.id ? `<button class="ghost-btn" data-action="delete-user" data-id="${u.id}" data-name="${u.full_name.replace(/"/g, '&quot;')}" style="margin-left:6px;color:#FF8B95;border-color:rgba(220,90,100,0.3);">Eliminar</button>` : ''}`
             : ''}</td>
         </tr>
@@ -1255,6 +1260,19 @@
         if (!confirm(`¿Eliminar PERMANENTEMENTE a ${b.dataset.name}? Esta acción no se puede deshacer.`)) return;
         try {
           await api(`/api/users/${b.dataset.id}`, { method: 'DELETE' });
+          loadUsers();
+        } catch (err) { alert(err.message); }
+      });
+    });
+    $('users-tbody').querySelectorAll('[data-action=toggle-active]').forEach((b) => {
+      b.addEventListener('click', async () => {
+        const isActive = b.dataset.active === '1';
+        const msg = isActive
+          ? `¿Desactivar temporalmente a ${b.dataset.name}? Podrá ver el dashboard pero no interactuar con él hasta que lo reactives.`
+          : `¿Reactivar a ${b.dataset.name}?`;
+        if (!confirm(msg)) return;
+        try {
+          await api(`/api/users/${b.dataset.id}/toggle-active`, { method: 'PATCH' });
           loadUsers();
         } catch (err) { alert(err.message); }
       });
@@ -2303,6 +2321,10 @@
         ? `Módulo ${me.module_number}${me.bhip_rank ? ' · ' + me.bhip_rank : ''}`
         : (me.role === 'system_leader' ? `Vista global${me.bhip_rank ? ' · ' + me.bhip_rank : ''}` : me.bhip_rank || '');
       $('user-code').textContent = me.distributor_code;
+
+      // Desactivación temporal: el usuario puede ver el dashboard pero un
+      // overlay rojo bloquea cualquier interacción.
+      document.body.classList.toggle('inactive-user', !me.active);
 
       // Mostrar nav-items según rol
       $$('.nav-item[data-roles]').forEach((el) => {

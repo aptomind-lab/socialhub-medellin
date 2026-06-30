@@ -100,6 +100,14 @@
 
   <!-- APP -->
   <section id="app-screen" class="screen">
+    <!-- Overlay de desactivación temporal (se activa con body.inactive-user) -->
+    <div id="inactive-overlay" aria-hidden="true">
+      <div class="inactive-message">
+        <div class="inactive-title">Cuenta desactivada temporalmente</div>
+        <p>El éxito del sistema es responsabilidad de todos. Ponte en contacto con el líder de sistema.</p>
+        <button type="button" id="inactive-logout" class="primary">Cerrar sesión</button>
+      </div>
+    </div>
     <aside class="sidebar">
       <div class="brand-row">
         <span class="mark">◆</span>

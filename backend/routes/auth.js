@@ -19,7 +19,8 @@ router.post('/login', (req, res) => {
   if (!user || !user.password_hash) {
     return res.status(401).json({ error: 'Credenciales inválidas' });
   }
-  if (!user.active) return res.status(403).json({ error: 'Usuario inactivo' });
+  // active=0 ya no rechaza el login: el dashboard recibe el flag y muestra
+  // overlay rojo que bloquea toda la UI mientras permite ver el contenido.
 
   if (!bcrypt.compareSync(password, user.password_hash)) {
     return res.status(401).json({ error: 'Credenciales inválidas' });
@@ -160,6 +161,7 @@ function publicUser(u) {
     module_number: moduleNumber,
     productive_leader_id: u.productive_leader_id,
     team_leader_name: teamLeaderName,
+    active: u.active === undefined ? 1 : (u.active ? 1 : 0),
     password_must_change: !!u.password_must_change,
     profile_completed: !!u.profile_completed,
   };

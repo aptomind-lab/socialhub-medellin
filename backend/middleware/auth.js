@@ -14,7 +14,10 @@ function requireAuth(req, res, next) {
              password_must_change, profile_completed, bhip_rank, phone, email
       FROM users WHERE id = ?
     `).get(payload.id);
-    if (!user || !user.active) return res.status(401).json({ error: 'Usuario no disponible' });
+    // active=0 ahora significa "desactivado temporalmente": el usuario sigue
+    // autenticando para que el dashboard muestre el overlay rojo, pero la UI
+    // bloquea cualquier interacción. Solo rechazamos cuando el usuario no existe.
+    if (!user) return res.status(401).json({ error: 'Usuario no disponible' });
     req.user = user;
     next();
   } catch (err) {
