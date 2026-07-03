@@ -378,7 +378,9 @@ button.primary:hover { transform: translateY(-1px); }
 
 /* ==== ALERT GRID ==== */
 .alert-grid {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 18px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 18px;
 }
 .alert-block {
   background: var(--navy-700); border: 1px solid var(--line);
@@ -765,6 +767,31 @@ button.primary:hover { transform: translateY(-1px); }
   .alert-icon { width: 26px; height: 26px; font-size: 13px; }
   .alert-block-head h3 { font-size: 15px; }
   .alert-count { font-size: 22px; }
+}
+
+/* ─── Promociones ─── */
+.promo-quote {
+  font-family: var(--serif, 'Cormorant Garamond', Georgia, serif);
+  font-style: italic;
+  font-size: 20px;
+  color: var(--gold-400, #C9A24A);
+  border-left: 3px solid var(--gold-400, #C9A24A);
+  padding: 6px 0 6px 18px;
+  margin: -4px 0 24px;
+  line-height: 1.4;
+}
+.tag.mvp {
+  background: linear-gradient(135deg, #FFD84F, #B48A2E);
+  color: #1A1408;
+  border-color: rgba(255, 216, 79, 0.5);
+  font-weight: 600;
+  letter-spacing: 0.6px;
+}
+.tag.vip {
+  background: rgba(201, 162, 74, 0.22);
+  color: var(--gold-400, #C9A24A);
+  border-color: rgba(201, 162, 74, 0.45);
+  letter-spacing: 0.6px;
 }
 
 /* ─── Dropdown inline para cambiar rol en lista de usuarios ─── */

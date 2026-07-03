@@ -179,6 +179,78 @@
     if (v !== 'scanner')    stopScanning();
     if (v === 'logros')     loadLogros();
     if (v === 'latam')      loadLatam();
+    if (v === 'promociones') loadPromotions();
+  }
+
+  // ============ PROMOCIONES ============
+  async function loadPromotions() {
+    try {
+      const data = await api('/api/promotions');
+      const cycleEl = $('promo-cycle-range');
+      if (!data.cycle) {
+        if (cycleEl) cycleEl.textContent = 'Sin ciclo vigente';
+        $('promo-top').innerHTML = '<tr><td colspan="6" class="muted">Sin ciclo vigente.</td></tr>';
+        return;
+      }
+      if (cycleEl) cycleEl.textContent = `Ciclo: ${data.cycle.start_date} → ${data.cycle.end_date}`;
+      const dateInput = $('promo-date');
+      if (dateInput) {
+        dateInput.min = data.cycle.start_date;
+        dateInput.max = data.cycle.end_date;
+        if (!dateInput.value) {
+          const todayCO = new Date(Date.now() - 5 * 3600 * 1000).toISOString().slice(0, 10);
+          const clamped = todayCO < data.cycle.start_date ? data.cycle.start_date
+                         : (todayCO > data.cycle.end_date ? data.cycle.end_date : todayCO);
+          dateInput.value = clamped;
+        }
+      }
+
+      const rows = data.top || [];
+      $('promo-top').innerHTML = rows.length
+        ? rows.map((r, i) => {
+            const rank = i + 1;
+            const tag = rank <= 5
+              ? '<span class="tag mvp">👑 MVP</span>'
+              : rank <= 30 ? '<span class="tag vip">VIP</span>' : '';
+            const isMe = r.user_id === me.id;
+            return `<tr${isMe ? ' style="background:rgba(201,162,74,0.08);"' : ''}>
+              <td><strong>${rank}</strong></td>
+              <td>${tag}</td>
+              <td>${r.full_name}${isMe ? ' <span class="muted" style="font-size:11px;">(yo)</span>' : ''}</td>
+              <td>${r.order_number}</td>
+              <td><strong style="color:var(--gold-400);">${r.bv_personal}</strong></td>
+              <td class="muted" style="font-size:12px;">${r.date}</td>
+            </tr>`;
+          }).join('')
+        : '<tr><td colspan="6" class="muted">Sin registros en este ciclo. ¡Sé el primero!</td></tr>';
+
+      const mine = data.my || [];
+      if (mine.length) {
+        const totalBV = mine.reduce((s, r) => s + (r.bv_personal || 0), 0);
+        $('promo-mine').textContent = `Ya registraste ${mine.length} orden(es) este ciclo · Total BV: ${totalBV}.`;
+      } else {
+        $('promo-mine').textContent = '';
+      }
+    } catch (err) { handleErr(err); }
+  }
+
+  if ($('promo-form')) {
+    $('promo-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        await api('/api/promotions', {
+          method: 'POST',
+          body: JSON.stringify({
+            bv_personal: parseInt($('promo-bv').value, 10) || 0,
+            order_number: $('promo-order').value.trim(),
+            date: $('promo-date').value,
+          }),
+        });
+        $('promo-bv').value = '';
+        $('promo-order').value = '';
+        loadPromotions();
+      } catch (err) { alert(err.message); }
+    });
   }
 
   // ============ TOP 10 LATAM ============

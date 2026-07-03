@@ -119,6 +119,7 @@
         <div class="me-scope" id="me-scope"></div>
       </div>
       <nav class="nav">
+        <a class="nav-item" data-view="promociones">Promociones 🏆</a>
         <a class="nav-item active" data-view="overview">Resumen</a>
         <a class="nav-item" data-view="alerts">Alertas <span class="nav-badge" id="alerts-badge" hidden>0</span></a>
         <a class="nav-item" data-view="comparison">Comparación</a>
@@ -155,6 +156,34 @@
           <span id="user-code" class="muted"></span>
         </div>
       </header>
+
+      <!-- PROMOCIONES -->
+      <section class="view" data-view="promociones">
+        <h2 class="view-title">Promociones</h2>
+        <div class="promo-quote">Los ganadores ganan porque no lo pueden evitar, es parte de su identidad</div>
+
+        <article class="panel">
+          <header class="panel-head">
+            <h3>Registrar BV Personal</h3>
+            <span class="muted" id="promo-cycle-range" style="font-size:12px;">—</span>
+          </header>
+          <form id="promo-form" class="form-row" style="grid-template-columns: 1fr 1fr 1fr auto; gap:12px;">
+            <div class="field"><label>BV Personal</label><input type="number" inputmode="numeric" id="promo-bv" min="0" required placeholder="0" /></div>
+            <div class="field"><label># de Orden</label><input type="text" id="promo-order" required placeholder="Ej. 12345" /></div>
+            <div class="field"><label>Fecha</label><input type="date" id="promo-date" required /></div>
+            <button class="primary sm" type="submit">Guardar</button>
+          </form>
+          <div class="hint" id="promo-mine"></div>
+        </article>
+
+        <article class="panel">
+          <header class="panel-head"><h3>Top 50 · BV Personal del ciclo</h3></header>
+          <div class="table-wrap"><table class="table">
+            <thead><tr><th>#</th><th>Categoría</th><th>Nombre</th><th># Orden</th><th>BV Personal</th><th>Fecha</th></tr></thead>
+            <tbody id="promo-top"></tbody>
+          </table></div>
+        </article>
+      </section>
 
       <!-- OVERVIEW -->
       <section class="view view-overview active" data-view="overview">
