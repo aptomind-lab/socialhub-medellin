@@ -255,8 +255,12 @@
     if (isWG) {
       const dayDup = result.wg.already_attended_today;
       $('modal-title').textContent = dayDup ? 'Asistencia WG (ya registrada hoy)' : 'Asistencia WG registrada';
+    } else if (result.advanced) {
+      const prev = stageLabels[result.previous_stage] || result.previous_stage;
+      const next = stageLabels[result.new_stage] || result.new_stage;
+      $('modal-title').textContent = `${result.guest.full_name}: ${prev} → ${next}`;
     } else {
-      $('modal-title').textContent = result.advanced ? 'Etapa avanzada' : 'Re-escaneo registrado';
+      $('modal-title').textContent = 'Re-escaneo registrado';
     }
 
     $('m-name').textContent = result.guest.full_name;

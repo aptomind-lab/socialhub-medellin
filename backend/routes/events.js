@@ -117,6 +117,19 @@ router.post('/scan', requireAuth, (req, res) => {
   const isWG = event.stage_target === 'WORKING_GROUP';
   // Plan de Trabajo (martes) registra Plan Trabajo Y el primer WG del martes con un solo scan.
   const isPlanTrabajo = event.stage_target === 'PLAN_TRABAJO';
+
+  // Bloquear doble escaneo: si el invitado ya tiene registrada esta etapa en su
+  // historial, no permitir un segundo scan del mismo evento. WG queda exento
+  // porque su asistencia es recurrente (se rastrea en wg_attendance).
+  if (!isWG) {
+    const alreadyRegistered = db.prepare(
+      `SELECT 1 FROM stage_history WHERE guest_id = ? AND to_stage = ? LIMIT 1`
+    ).get(guest.id, event.stage_target);
+    if (alreadyRegistered) {
+      return res.status(409).json({ error: 'Ya fue registrado en esta etapa.' });
+    }
+  }
+
   const newStage = nextStageAfterScan(guest.current_stage, event.stage_target);
   const advanced = newStage !== guest.current_stage;
 

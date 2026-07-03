@@ -10,6 +10,7 @@ const { sendQrEmail } = require('../utils/email');
 const colors = require('../utils/colors');
 const { nextDistributorCode } = require('../utils/usercode');
 const { nextOccurrenceForWeeklyEvent } = require('../utils/calendar');
+const { localDate } = require('../utils/tz');
 const gam = require('../utils/gamification');
 const bcrypt = require('bcryptjs');
 
@@ -253,22 +254,30 @@ router.post('/:id/advance', requireAuth, (req, res) => {
   const guest = db.prepare('SELECT * FROM guests WHERE id = ?').get(req.params.id);
   if (!guest) return res.status(404).json({ error: 'Invitado no encontrado' });
 
-  const today = new Date().toISOString().slice(0, 10);
-  const month = today.slice(0, 7);
+  // Corrección manual: usar la fecha del último escaneo del invitado (en hora
+  // local Colombia) para que el ajuste se contabilice en el evento correcto
+  // del embudo, y NO en el día en que se hace la corrección.
+  const lastScan = db.prepare(`
+    SELECT scanned_at, date(scanned_at, '-5 hours') AS scan_date
+    FROM stage_history WHERE guest_id = ? ORDER BY scanned_at DESC LIMIT 1
+  `).get(guest.id);
+  const scanIso  = lastScan?.scanned_at || null;                    // UTC timestamp del último scan (o null si no hay)
+  const scanDate = lastScan?.scan_date || localDate();              // YYYY-MM-DD Colombia
+  const scanMonth = scanDate.slice(0, 7);
 
   db.prepare(`
     UPDATE guests SET current_stage = ?, updated_at = datetime('now'),
-      signed_at    = CASE WHEN ? = 'FIRMADO'    THEN datetime('now') ELSE signed_at END,
+      signed_at    = CASE WHEN ? = 'FIRMADO'    THEN COALESCE(?, datetime('now')) ELSE signed_at END,
       signed_month = CASE WHEN ? = 'FIRMADO'    THEN ? ELSE signed_month END,
       bit_date     = CASE WHEN ? = 'BIT'        AND bit_date IS NULL        THEN ? ELSE bit_date END,
       power_talk_date = CASE WHEN ? = 'POWER_TALK' AND power_talk_date IS NULL THEN ? ELSE power_talk_date END
     WHERE id = ?
-  `).run(to_stage, to_stage, to_stage, month, to_stage, today, to_stage, today, guest.id);
+  `).run(to_stage, to_stage, scanIso, to_stage, scanMonth, to_stage, scanDate, to_stage, scanDate, guest.id);
 
   db.prepare(`
-    INSERT INTO stage_history (guest_id, from_stage, to_stage, scanned_by, notes)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(guest.id, guest.current_stage, to_stage, req.user.id, notes || null);
+    INSERT INTO stage_history (guest_id, from_stage, to_stage, scanned_by, notes, scanned_at)
+    VALUES (?, ?, ?, ?, ?, COALESCE(?, datetime('now')))
+  `).run(guest.id, guest.current_stage, to_stage, req.user.id, notes || null, scanIso);
 
   try { colors.refreshColor(guest.id); } catch (e) { console.error('[advance/color]', e.message); }
   res.json({ ok: true, guest: db.prepare('SELECT * FROM guests WHERE id = ?').get(guest.id) });

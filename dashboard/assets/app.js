@@ -2433,15 +2433,22 @@
       el.innerHTML = '<div class="muted" style="font-size:13px;padding:14px 0;">Aún no escaneas a nadie en esta sesión.</div>';
       return;
     }
-    el.innerHTML = scRecent.map((r) => `
+    el.innerHTML = scRecent.map((r) => {
+      const transition = r.advanced
+        ? `<strong>${r.name}:</strong> ${r.from_stage} → <strong style="color:var(--gold-400);">${r.to_stage}</strong>`
+        : r.wg
+          ? `<strong>${r.name}</strong> · WG registrado`
+          : `<strong>${r.name}</strong>`;
+      return `
       <div class="scanner-recent-row">
         <span class="scanner-recent-time">${r.time}</span>
         <div>
-          <div><strong>${r.name}</strong></div>
-          <div class="muted" style="font-size:11px;">${r.event_name}${r.advanced ? ` · ${r.from_stage} → ${r.to_stage}` : (r.wg ? ' · WG registrado' : '')}</div>
+          <div>${transition}</div>
+          <div class="muted" style="font-size:11px;">${r.event_name}</div>
         </div>
       </div>
-    `).join('');
+    `;
+    }).join('');
   }
 
   // Listeners — usamos delegación porque los elementos existen al cargar
