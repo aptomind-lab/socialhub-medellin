@@ -84,12 +84,20 @@ router.get('/', requireAuth, (req, res) => {
   const cycle = getCurrentCycle();
   if (!cycle) return res.json({ cycle: null, top: [], my: [] });
 
+  // Top 50 usuarios (no records): BV Personal es acumulativo dentro del ciclo,
+  // así cada usuario aparece una sola vez con la suma de sus órdenes.
   const top = db.prepare(`
-    SELECT p.id, p.bv_personal, p.order_number, p.date, u.full_name, u.id AS user_id
+    SELECT
+      u.id       AS user_id,
+      u.full_name,
+      SUM(p.bv_personal) AS bv_personal,
+      COUNT(*)   AS orders_count,
+      MAX(p.date) AS last_date
     FROM promotions p
     JOIN users u ON u.id = p.user_id
     WHERE p.cycle_id = ?
-    ORDER BY p.bv_personal DESC, p.created_at ASC
+    GROUP BY u.id
+    ORDER BY bv_personal DESC, u.full_name ASC
     LIMIT 50
   `).all(cycle.id);
 

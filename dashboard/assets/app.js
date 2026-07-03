@@ -217,9 +217,9 @@
               <td><strong>${rank}</strong></td>
               <td>${tag}</td>
               <td>${r.full_name}${isMe ? ' <span class="muted" style="font-size:11px;">(yo)</span>' : ''}</td>
-              <td>${r.order_number}</td>
+              <td>${r.orders_count}</td>
               <td><strong style="color:var(--gold-400);">${r.bv_personal}</strong></td>
-              <td class="muted" style="font-size:12px;">${r.date}</td>
+              <td class="muted" style="font-size:12px;">${r.last_date || '—'}</td>
             </tr>`;
           }).join('')
         : '<tr><td colspan="6" class="muted">Sin registros en este ciclo. ¡Sé el primero!</td></tr>';
