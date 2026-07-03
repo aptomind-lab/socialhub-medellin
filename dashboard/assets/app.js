@@ -2143,7 +2143,7 @@
   $('new-event').addEventListener('click', () => openEventEditor(null));
 
   // ============ ALERTS ============
-  const ALERT_BUCKETS = ['orange_color', 'no_messages_48h', 'near_two_weeks_bit', 'two_weeks_wg'];
+  const ALERT_BUCKETS = ['no_messages_48h', 'near_two_weeks_bit', 'two_weeks_wg'];
 
   async function loadAlerts() {
     try {

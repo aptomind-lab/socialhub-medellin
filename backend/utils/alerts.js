@@ -1,7 +1,7 @@
 // Centraliza la detección de alertas mostradas en el dashboard.
 // Cada alerta es un objeto:
 //   { type, severity, message, guest_id?, user_id?, link?, since? }
-// type: 'orange_color' | 'no_messages_48h' | 'near_two_weeks_bit' | 'two_weeks_wg'
+// type: 'no_messages_48h' | 'near_two_weeks_bit' | 'two_weeks_wg'
 // severity: 'info' | 'warning' | 'critical'
 const db = require('../db');
 const { scopeUsersClause } = require('../middleware/auth');
@@ -31,24 +31,6 @@ function noMessagesIn48h(actor) {
       user_id: r.id,
       since: r.last_message_at,
     }));
-}
-
-// Guests en color naranja: visibles a PL y ML según scope.
-function orangeColorGuests(actor) {
-  const scope = scopeUsersClause(actor, 'u');
-  const sql = `
-    SELECT g.id, g.full_name, g.color, g.color_set_at, u.full_name AS distributor_name, u.distributor_code
-    FROM guests g JOIN users u ON u.id = g.distributor_id
-    WHERE g.color = 'orange' ${scope.sql}
-  `;
-  const rows = db.prepare(sql).all(...scope.params);
-  return rows.map((r) => ({
-    type: 'orange_color',
-    severity: 'critical',
-    message: `${r.full_name} entró en color naranja (2 faltas consecutivas)`,
-    guest_id: r.id,
-    since: r.color_set_at,
-  }));
 }
 
 // Seguimientos cerca de cumplir 2 semanas desde B.I.T sin firmar — alerta amarilla.
@@ -103,7 +85,6 @@ function twoWeeksWg(actor) {
 
 function allAlerts(actor) {
   const buckets = {
-    orange_color: orangeColorGuests(actor),
     near_two_weeks_bit: nearTwoWeeksBit(actor),
     two_weeks_wg: twoWeeksWg(actor),
     no_messages_48h: actor.role === 'productive_leader' || actor.role === 'module_leader' || actor.role === 'system_leader'
@@ -111,7 +92,6 @@ function allAlerts(actor) {
       : [],
   };
   const flat = [
-    ...buckets.orange_color,
     ...buckets.no_messages_48h,
     ...buckets.near_two_weeks_bit,
     ...buckets.two_weeks_wg,
@@ -121,7 +101,6 @@ function allAlerts(actor) {
 }
 
 module.exports = {
-  orangeColorGuests,
   noMessagesIn48h,
   nearTwoWeeksBit,
   twoWeeksWg,
