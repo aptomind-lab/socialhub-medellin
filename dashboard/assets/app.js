@@ -206,6 +206,7 @@
       }
 
       const rows = data.top || [];
+      const canViewHistory = ['module_leader', 'system_leader', 'lider_supremo'].includes(me.role);
       $('promo-top').innerHTML = rows.length
         ? rows.map((r, i) => {
             const rank = i + 1;
@@ -213,16 +214,22 @@
               ? '<span class="tag mvp">👑 MVP</span>'
               : rank <= 30 ? '<span class="tag vip">VIP</span>' : '';
             const isMe = r.user_id === me.id;
+            const bvCell = canViewHistory
+              ? `<strong class="promo-bv-link" data-user-id="${r.user_id}" data-name="${r.full_name.replace(/"/g, '&quot;')}" title="Ver historial de registros" style="color:var(--gold-400);cursor:pointer;text-decoration:underline dotted;">${r.bv_personal}</strong>`
+              : `<strong style="color:var(--gold-400);">${r.bv_personal}</strong>`;
             return `<tr${isMe ? ' style="background:rgba(201,162,74,0.08);"' : ''}>
               <td><strong>${rank}</strong></td>
               <td>${tag}</td>
               <td>${r.full_name}${isMe ? ' <span class="muted" style="font-size:11px;">(yo)</span>' : ''}</td>
               <td>${r.orders_count}</td>
-              <td><strong style="color:var(--gold-400);">${r.bv_personal}</strong></td>
+              <td>${bvCell}</td>
               <td class="muted" style="font-size:12px;">${r.last_date || '—'}</td>
             </tr>`;
           }).join('')
         : '<tr><td colspan="6" class="muted">Sin registros en este ciclo. ¡Sé el primero!</td></tr>';
+      $('promo-top').querySelectorAll('.promo-bv-link').forEach((el) => {
+        el.addEventListener('click', () => openPromoHistoryModal(el.dataset.userId, el.dataset.name));
+      });
 
       const mine = data.my || [];
       if (mine.length) {
@@ -232,6 +239,37 @@
         $('promo-mine').textContent = '';
       }
     } catch (err) { handleErr(err); }
+  }
+
+  async function openPromoHistoryModal(userId, userName) {
+    openModal(`Historial · ${userName}`, '<div class="muted">Cargando…</div>');
+    try {
+      const r = await api(`/api/promotions/user/${userId}`);
+      if (!r.records || !r.records.length) {
+        $('modal-body').innerHTML = `<div class="modal-body"><div class="muted">Sin registros en este ciclo.</div></div>`;
+        return;
+      }
+      const rowsHtml = r.records.map((rec) => `
+        <tr>
+          <td>${rec.date}</td>
+          <td>${rec.order_number}</td>
+          <td><strong style="color:var(--gold-400);">${rec.bv_personal}</strong></td>
+          <td class="muted" style="font-size:11px;">${fmtLocal(rec.created_at)}</td>
+        </tr>
+      `).join('');
+      $('modal-body').innerHTML = `<div class="modal-body" style="max-height:70vh;overflow:auto;">
+        <div style="margin-bottom:12px;">
+          <div class="muted" style="font-size:12px;">Ciclo ${r.cycle?.start_date} → ${r.cycle?.end_date}</div>
+          <div style="margin-top:4px;">Total BV: <strong style="color:var(--gold-400);">${r.total}</strong> · ${r.records.length} orden(es)</div>
+        </div>
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Fecha</th><th># Orden</th><th>BV</th><th>Registrado</th></tr></thead>
+          <tbody>${rowsHtml}</tbody>
+        </table></div>
+      </div>`;
+    } catch (err) {
+      $('modal-body').innerHTML = `<div class="modal-body"><div class="error">${err.message}</div></div>`;
+    }
   }
 
   if ($('promo-form')) {

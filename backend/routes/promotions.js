@@ -136,6 +136,32 @@ router.post('/', requireAuth, (req, res) => {
   });
 });
 
+// GET /api/promotions/user/:userId — historial de registros del ciclo vigente
+// para un usuario específico. Solo para roles con supervisión.
+router.get('/user/:userId', requireAuth, (req, res) => {
+  if (!['module_leader', 'system_leader', 'lider_supremo'].includes(req.user.role)) {
+    return res.status(403).json({ error: 'No tienes permiso para ver historial' });
+  }
+  const userId = parseInt(req.params.userId, 10);
+  if (!userId) return res.status(400).json({ error: 'userId inválido' });
+
+  const user = db.prepare('SELECT id, full_name FROM users WHERE id = ?').get(userId);
+  if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+  const cycle = getCurrentCycle();
+  if (!cycle) return res.json({ user, cycle: null, records: [], total: 0 });
+
+  const records = db.prepare(`
+    SELECT id, bv_personal, order_number, date, created_at
+    FROM promotions
+    WHERE user_id = ? AND cycle_id = ?
+    ORDER BY created_at DESC
+  `).all(userId, cycle.id);
+
+  const total = records.reduce((s, r) => s + r.bv_personal, 0);
+  res.json({ user, cycle, records, total });
+});
+
 // PATCH /api/promotions/cycle — ajustar la fecha de corte del ciclo vigente.
 // Solo lider_supremo y system_leader.
 router.patch('/cycle', requireAuth, (req, res) => {
