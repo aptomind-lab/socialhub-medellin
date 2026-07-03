@@ -525,7 +525,17 @@
   async function loadFunnel() {
     const mode = $('funnel-mode') ? $('funnel-mode').value : 'month';
     const fFrom = $('funnel-from'), fTo = $('funnel-to');
+    const rangeWrap = $('funnel-date-range');
+    const bitSel = $('funnel-bit-date');
     const fmt = (d) => d.toISOString().slice(0, 10);
+
+    // Toggle controles: en Ciclo B.I.T se usa el selector por fecha, no un rango.
+    if (rangeWrap) rangeWrap.style.display = mode === 'bit_cycle' ? 'none' : '';
+    if (bitSel)    bitSel.style.display    = mode === 'bit_cycle' ? '' : 'none';
+
+    if (mode === 'bit_cycle') {
+      return loadBitCycleMode();
+    }
 
     // Auto-rellenar fechas según modo (a menos que sea 'custom').
     if (mode !== 'custom') {
@@ -536,7 +546,7 @@
         const sunday = new Date(monday); sunday.setUTCDate(monday.getUTCDate() + 6);
         fFrom.value = fmt(monday); fTo.value = fmt(sunday);
       } else {
-        // month o bit_cycle: usamos el mes actual como base
+        // month: usamos el mes actual como base
         const y = now.getUTCFullYear(), m = now.getUTCMonth();
         fFrom.value = fmt(new Date(Date.UTC(y, m, 1)));
         fTo.value   = fmt(new Date(Date.UTC(y, m + 1, 0)));
@@ -550,10 +560,6 @@
 
     const rangeParams = { from: fFrom.value, to: fTo.value };
     window._shFunnelRange = rangeParams;
-
-    if (mode === 'bit_cycle') {
-      return loadBitCycle(rangeParams);
-    }
 
     const data = await api('/api/stats/funnel' + qs({ ...getFilters(), ...rangeParams }));
     const max = Math.max(...data.funnel.map((s) => s.count), 1);
@@ -731,6 +737,44 @@
   }
 
   // ============ CICLO B.I.T ============
+  // Selector de B.I.T específico por fecha. Popula el dropdown y delega en loadBitCycle
+  // con el mismo día como rango (from=to=fecha elegida) para acotar el cohort exactamente
+  // a los invitados de ese B.I.T.
+  function formatBitDateLabel(iso) {
+    const [y, m, d] = String(iso).split('-').map((n) => parseInt(n, 10));
+    const monthShort = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'][m - 1] || '';
+    return `${String(d).padStart(2, '0')} ${monthShort} ${y}`;
+  }
+
+  async function loadBitCycleMode() {
+    const bitSel = $('funnel-bit-date');
+    if (!bitSel) return;
+    // Recarga la lista de fechas B.I.T disponibles (respetando el filtro de módulo del topbar).
+    let dates = [];
+    try {
+      const r = await api('/api/stats/funnel/bit-dates' + qs(getFilters()));
+      dates = r.dates || [];
+    } catch (e) {
+      $('funnel-list').innerHTML = `<div class="error">${e.message}</div>`;
+      return;
+    }
+    if (!dates.length) {
+      bitSel.innerHTML = '<option value="">Sin B.I.T disponibles</option>';
+      $('funnel-list').innerHTML = '<div class="muted">No hay B.I.T registrados en tu scope.</div>';
+      return;
+    }
+    // Preservar la selección previa si sigue vigente, sino elegir el B.I.T más reciente.
+    const prev = bitSel.value;
+    bitSel.innerHTML = dates
+      .map((d) => `<option value="${d.date}">B.I.T — ${formatBitDateLabel(d.date)} (${d.count})</option>`)
+      .join('');
+    if (prev && dates.some((d) => d.date === prev)) bitSel.value = prev;
+    const chosen = bitSel.value;
+    const range = { from: chosen, to: chosen };
+    window._shFunnelRange = range;
+    return loadBitCycle(range);
+  }
+
   // Cohort: invitados que llegaron a BIT dentro del rango. Traza recorrido hasta Firmado o inactivo.
   async function loadBitCycle(range) {
     const STAGE_LBL = { REGISTRO:'Book', BOM:'Show B.O.M', BIT:'B.I.T', POWER_TALK:'Power Talk',
@@ -746,9 +790,12 @@
       const total = data.total || 0;
 
       // Barras de cohort: cuántos de los que llegaron a BIT continuaron.
+      const rangeTxt = range.from === range.to
+        ? `del B.I.T del ${formatBitDateLabel(range.from)}`
+        : `cuyo B.I.T ocurrió entre ${range.from} y ${range.to}`;
       const cohortBars = `
         <div class="overline">Ciclo B.I.T · ${total} invitado(s)</div>
-        <div class="hint" style="margin-bottom:10px;">Cohorte: invitados cuyo B.I.T ocurrió entre ${range.from} y ${range.to}. Inactivo = 3 días hábiles sin escaneo y no firmado.</div>
+        <div class="hint" style="margin-bottom:10px;">Cohorte: invitados ${rangeTxt}. Inactivo = 3 días hábiles sin escaneo y no firmado.</div>
         ${['BIT','POWER_TALK','PLAN_TRABAJO','FIRMADO'].map((s) => {
           const c = sc[s] || 0;
           const p = pct[s] || 0;
@@ -1822,6 +1869,7 @@
   document.addEventListener('change', (e) => {
     if (!e.target) return;
     if (e.target.id === 'funnel-mode' || e.target.id === 'funnel-from' || e.target.id === 'funnel-to') loadFunnel();
+    if (e.target.id === 'funnel-bit-date') loadBitCycleMode();
   });
 
   document.addEventListener('click', async (e) => {

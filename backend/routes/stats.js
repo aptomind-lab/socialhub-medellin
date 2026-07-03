@@ -569,6 +569,39 @@ router.get('/funnel/guests', requireAuth, (req, res) => {
   res.json({ stage, from, to, guests: rows });
 });
 
+// Fechas B.I.T disponibles para el selector del embudo (Ciclo B.I.T).
+// Retorna cada fecha con el número de invitados que tuvieron su BIT ese día,
+// scoped por visibilidad del actor. Ordenado descendente. Acepta module_id opcional.
+router.get('/funnel/bit-dates', requireAuth, (req, res) => {
+  const { module_id } = req.query;
+  const scope = scopeUsersClause(req.user, 'u');
+
+  const extraFilters = [];
+  const extraParams = [];
+  if (module_id) {
+    const m = db.prepare('SELECT system_id FROM modules WHERE id = ?').get(module_id);
+    const allowed =
+      req.user.role === 'lider_supremo' ||
+      (req.user.role === 'system_leader' && m && m.system_id === req.user.system_id) ||
+      parseInt(module_id, 10) === req.user.module_id;
+    if (allowed) { extraFilters.push('u.module_id = ?'); extraParams.push(module_id); }
+  }
+  const extraSql = extraFilters.length ? ' AND ' + extraFilters.join(' AND ') : '';
+
+  const rows = db.prepare(`
+    SELECT g.bit_date AS date, COUNT(*) AS count
+    FROM guests g
+    JOIN users u ON u.id = g.distributor_id
+    WHERE g.bit_date IS NOT NULL
+      ${scope.sql} ${extraSql}
+    GROUP BY g.bit_date
+    ORDER BY g.bit_date DESC
+    LIMIT 60
+  `).all(...scope.params, ...extraParams);
+
+  res.json({ dates: rows });
+});
+
 // Ciclo B.I.T: cohort de guests cuyo primer BIT cae en el rango. Para cada uno:
 //   - fechas clave (BIT/PT/PLAN_TRABAJO/FIRMADO)
 //   - último escaneo y si está inactivo (3 días hábiles sin scan, no firmado)

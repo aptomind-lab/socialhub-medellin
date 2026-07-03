@@ -270,9 +270,12 @@
               <option value="month" selected>Mes actual</option>
               <option value="bit_cycle">Ciclo B.I.T</option>
             </select>
-            <input type="date" id="funnel-from" style="max-width:160px;" />
-            <span class="muted">→</span>
-            <input type="date" id="funnel-to" style="max-width:160px;" />
+            <span id="funnel-date-range" style="display:flex;gap:10px;align-items:center;">
+              <input type="date" id="funnel-from" style="max-width:160px;" />
+              <span class="muted">→</span>
+              <input type="date" id="funnel-to" style="max-width:160px;" />
+            </span>
+            <select id="funnel-bit-date" style="max-width:220px;display:none;"></select>
           </div>
           <div id="funnel-list"></div>
         </article>
