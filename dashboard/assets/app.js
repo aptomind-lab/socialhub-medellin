@@ -1384,6 +1384,29 @@
     }
     return [];
   }
+  // Edición del ID/código de distribuidor — Líder de Módulo hacia arriba.
+  function openCodeEditModal(userId, currentCode, userName) {
+    openModal('Editar ID de distribuidor', `
+      <div class="field"><label>Profesional</label><input type="text" value="${userName || ''}" disabled /></div>
+      <div class="field"><label>ID / código de distribuidor</label><input type="text" id="ce-code" autocapitalize="characters" style="text-transform:uppercase;letter-spacing:2px;" value="${currentCode || ''}" placeholder="Ej. M3DS03" /></div>
+      <p class="hint" style="margin: 0 0 14px;">El código debe ser único. Cambiarlo afecta el enlace de invitación del profesional.</p>
+      <button class="primary" id="ce-save">Guardar</button>
+    `);
+    $('ce-save').addEventListener('click', async () => {
+      const code = $('ce-code').value.trim().toUpperCase();
+      if (!code) return alert('El ID no puede estar vacío');
+      if (code === (currentCode || '').toUpperCase()) return closeModal();
+      try {
+        await api(`/api/users/${userId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ distributor_code: code }),
+        });
+        closeModal();
+        loadUsers();
+      } catch (err) { alert(err.message); }
+    });
+  }
+
   function openRoleEditor(span) {
     const id = span.dataset.id;
     const current = span.dataset.role;
@@ -1499,7 +1522,9 @@
           <td>${u.bhip_rank ? `<span class="tag" style="background:rgba(46,139,139,0.18);color:var(--teal-400);border-color:rgba(70,176,168,0.3);">${u.bhip_rank}</span>` : '—'}</td>
           <td>${u.module_number ? `M${u.module_number}` : '—'}</td>
           <td>${u.productive_leader_name || '—'}</td>
-          <td><span class="code-pill">${u.distributor_code}</span></td>
+          <td>${(me.role === 'lider_supremo' || me.role === 'system_leader' || me.role === 'module_leader')
+            ? `<span class="code-pill code-edit" data-id="${u.id}" data-code="${u.distributor_code}" data-name="${u.full_name.replace(/"/g, '&quot;')}" title="Click para editar el ID de distribuidor" style="cursor:pointer;">${u.distributor_code} ✎</span>`
+            : `<span class="code-pill">${u.distributor_code}</span>`}</td>
           <td><span class="${blocked ? 'tag red' : ''}">${lastTxt}</span></td>
           <td>${pendingTag}</td>
           <td>${me.role === 'lider_supremo' ? `<button class="ghost-btn" data-action="edit-user" data-id="${u.id}" style="margin-right:6px;">Editar</button>` : ''}${(me.role === 'lider_supremo' || me.role === 'system_leader' || me.role === 'module_leader')
@@ -1519,6 +1544,9 @@
         const r = await api(`/api/users/${b.dataset.id}`);
         openEditUserModal(r.user);
       });
+    });
+    $('users-tbody').querySelectorAll('.code-edit').forEach((s) => {
+      s.addEventListener('click', () => openCodeEditModal(s.dataset.id, s.dataset.code, s.dataset.name));
     });
     $('users-tbody').querySelectorAll('[data-action=edit-rank]').forEach((b) => {
       b.addEventListener('click', () => openRankModal(b.dataset.id, b.dataset.rank));
@@ -1914,25 +1942,59 @@
     }
   }
 
-  function openSignModal(guestId, guestName) {
-    openModal('Firmar Profesional', `
+  async function openSignModal(guestId, guestName) {
+    // Cargamos módulos y líderes productivos visibles para poblar los selects.
+    if (!cachedModules.length) await loadModules();
+    if (!cachedProductiveLeaders.length) await loadCachedUsers();
+
+    // Defaults sugeridos por el backend (código secuencial, módulo del líder, mesa del contactador).
+    let info = {};
+    try {
+      info = await api(`/api/guests/${guestId}/sign-info`);
+    } catch (err) { return alert(err.message); }
+
+    const moduleOpts = cachedModules.map((m) =>
+      `<option value="${m.id}" ${m.id === info.default_module_id ? 'selected' : ''}>M${m.number} — ${m.name}</option>`
+    ).join('');
+
+    openModal('Convertir a Profesional', `
       <div class="field"><label>Invitado</label><input type="text" value="${guestName}" disabled /></div>
+      <div class="field"><label>ID / código de distribuidor</label><input type="text" id="sign-code" autocapitalize="characters" style="text-transform:uppercase;letter-spacing:2px;" value="${info.suggested_code || ''}" placeholder="Ej. M3DS03" /></div>
+      <div class="field"><label>Módulo al que pertenece</label><select id="sign-module">${moduleOpts || '<option value="">— sin módulos —</option>'}</select></div>
+      <div class="field"><label>Mesa productiva (Líder Productivo)</label><select id="sign-pl"></select></div>
       <div class="field"><label>Contraseña inicial (opcional)</label><input type="text" id="sign-password" placeholder="Por defecto: Sh2026!" /></div>
       <div class="field"><label>Notas (opcional)</label><input type="text" id="sign-notes" placeholder="Ej. Inversión $1,825 USD confirmada" /></div>
-      <p class="hint" style="margin: 0 0 18px;">Esto crea automáticamente el usuario del nuevo profesional, asignándolo a la mesa correcta según las reglas del sistema, y le genera un código de distribuidor.</p>
-      <button class="primary" id="confirm-sign">Confirmar firma</button>
+      <p class="hint" style="margin: 0 0 18px;">Esto crea el usuario del nuevo profesional y lo hace visible de inmediato en la sección Usuarios. El ID de distribuidor es editable.</p>
+      <button class="primary" id="confirm-sign">Confirmar conversión</button>
     `);
+
+    function refreshPl() {
+      const modId = $('sign-module').value;
+      const pls = cachedProductiveLeaders.filter((p) => !modId || p.module_id == modId);
+      $('sign-pl').innerHTML = (pls.length ? pls : cachedProductiveLeaders)
+        .map((p) => {
+          const modTag = p.module_number ? ' · M' + p.module_number : '';
+          const sel = p.id === info.default_productive_leader_id ? ' selected' : '';
+          return `<option value="${p.id}"${sel}>${p.full_name}${modTag}</option>`;
+        }).join('') || '<option value="">— sin líder productivo —</option>';
+    }
+    refreshPl();
+    $('sign-module').addEventListener('change', refreshPl);
+
     $('confirm-sign').addEventListener('click', async () => {
       try {
         const r = await api(`/api/guests/${guestId}/sign`, {
           method: 'POST',
           body: JSON.stringify({
+            distributor_code: $('sign-code').value.trim() || null,
+            module_id: $('sign-module').value || null,
+            productive_leader_id: $('sign-pl').value || null,
             notes: $('sign-notes').value || null,
             password: $('sign-password').value || null,
           }),
         });
         closeModal();
-        alert(`✓ ${guestName} firmado.\n\nCódigo: ${r.distributor_code}\nContraseña: ${r.default_password}\nMesa: ${r.new_user.productive_leader_name || '—'}\n\n${r.assignment_rule}`);
+        alert(`✓ ${guestName} convertido a Profesional.\n\nCódigo: ${r.distributor_code}\nContraseña: ${r.default_password}\nMesa: ${r.new_user.productive_leader_name || '—'}\n\n${r.assignment_rule}`);
         loadGuests($('guest-search').value);
         refreshAlertBadge();
       } catch (err) { alert(err.message); }

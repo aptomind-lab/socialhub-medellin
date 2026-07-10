@@ -283,22 +283,57 @@ router.post('/:id/advance', requireAuth, (req, res) => {
   res.json({ ok: true, guest: db.prepare('SELECT * FROM guests WHERE id = ?').get(guest.id) });
 });
 
-// Firma un guest: avanza a FIRMADO, sella signed_month, crea el users row asignándolo
-// a la mesa correcta según el contactador.
+// Defaults sugeridos para el formulario de conversión (firma).
+// Módulo por defecto: el del líder que convierte (req.user); si no tiene, el del
+// contactador. Mesa por defecto: la del contactador (o él mismo si es PL).
+// Código sugerido: siguiente secuencial del módulo — editable en el formulario.
+router.get('/:id/sign-info', requireAuth, (req, res) => {
+  const guest = db.prepare(`
+    SELECT g.id, g.full_name, g.email, g.current_stage,
+           u.id AS contactor_id, u.role AS contactor_role, u.full_name AS contactor_name,
+           u.productive_leader_id AS contactor_pl_id, u.module_id AS contactor_module_id,
+           u.system_id AS contactor_system_id
+    FROM guests g JOIN users u ON u.id = g.distributor_id WHERE g.id = ?
+  `).get(req.params.id);
+  if (!guest) return res.status(404).json({ error: 'Invitado no encontrado' });
+
+  const defaultModuleId = req.user.module_id || guest.contactor_module_id || null;
+  const defaultPlId = guest.contactor_role === 'productive_leader'
+    ? guest.contactor_id
+    : guest.contactor_pl_id;
+
+  let suggestedCode = '';
+  if (defaultModuleId) {
+    const m = db.prepare('SELECT number FROM modules WHERE id = ?').get(defaultModuleId);
+    if (m) suggestedCode = nextDistributorCode(m.number);
+  }
+
+  res.json({
+    guest_name: guest.full_name,
+    already_signed: guest.current_stage === 'FIRMADO',
+    contactor_name: guest.contactor_name,
+    contactor_role: guest.contactor_role,
+    default_module_id: defaultModuleId,
+    default_productive_leader_id: defaultPlId || null,
+    suggested_code: suggestedCode,
+  });
+});
+
+// Firma un guest: avanza a FIRMADO, sella signed_month, crea el users row.
+// El nuevo profesional hereda system_id/module_id del líder que lo convierte
+// (con fallback al módulo/sistema del contactador). El formulario permite ajustar
+// código de distribuidor, módulo y mesa productiva.
 router.post('/:id/sign', requireAuth, (req, res) => {
-  const { notes, password } = req.body || {};
+  const { notes, password, distributor_code, module_id, productive_leader_id } = req.body || {};
   const guest = db.prepare(`
     SELECT g.*, u.id AS contactor_id, u.role AS contactor_role,
            u.productive_leader_id AS contactor_pl_id, u.module_id AS contactor_module_id,
-           u.full_name AS contactor_name
+           u.system_id AS contactor_system_id, u.full_name AS contactor_name
     FROM guests g JOIN users u ON u.id = g.distributor_id WHERE g.id = ?
   `).get(req.params.id);
   if (!guest) return res.status(404).json({ error: 'Invitado no encontrado' });
   if (guest.current_stage === 'FIRMADO') {
     return res.status(409).json({ error: 'El invitado ya está firmado' });
-  }
-  if (!guest.contactor_module_id) {
-    return res.status(400).json({ error: 'Contactador sin módulo asignado — no se puede firmar' });
   }
 
   // Email único: si ya existe, fallar con mensaje claro
@@ -311,13 +346,35 @@ router.post('/:id/sign', requireAuth, (req, res) => {
     });
   }
 
-  // Determinar mesa: si contactador es PL, su mesa; sino, la mesa a la que pertenece.
-  const newPlId = guest.contactor_role === 'productive_leader'
-    ? guest.contactor_id
-    : guest.contactor_pl_id;
+  // Módulo: el enviado en el formulario, o por defecto el del líder que convierte,
+  // o el del contactador.
+  const finalModuleId = module_id
+    ? parseInt(module_id, 10)
+    : (req.user.module_id || guest.contactor_module_id);
+  if (!finalModuleId) {
+    return res.status(400).json({ error: 'Falta el módulo — asígnalo en el formulario de conversión' });
+  }
+  const moduleRow = db.prepare('SELECT id, number, system_id FROM modules WHERE id = ?').get(finalModuleId);
+  if (!moduleRow) return res.status(400).json({ error: 'Módulo inválido' });
 
-  const moduleRow = db.prepare('SELECT number FROM modules WHERE id = ?').get(guest.contactor_module_id);
-  if (!moduleRow) return res.status(500).json({ error: 'Módulo del contactador no encontrado' });
+  // Sistema: hereda del líder que convierte; si no tiene (p.ej. lider_supremo),
+  // usa el del módulo elegido; en último caso el del contactador.
+  const finalSystemId = req.user.system_id || moduleRow.system_id || guest.contactor_system_id || null;
+
+  // Mesa: la enviada en el formulario, o por defecto la del contactador
+  // (o él mismo si es Líder Productivo).
+  const finalPlId = productive_leader_id
+    ? parseInt(productive_leader_id, 10)
+    : (guest.contactor_role === 'productive_leader' ? guest.contactor_id : guest.contactor_pl_id);
+
+  // Código de distribuidor: el editado en el formulario (validando unicidad),
+  // o el siguiente secuencial del módulo si no se envía.
+  let providedCode = null;
+  if (distributor_code && String(distributor_code).trim()) {
+    providedCode = String(distributor_code).toUpperCase().trim();
+    const clash = db.prepare('SELECT id FROM users WHERE distributor_code = ?').get(providedCode);
+    if (clash) return res.status(409).json({ error: 'El ID de distribuidor ya está en uso' });
+  }
 
   const today = new Date().toISOString().slice(0, 10);
   const month = today.slice(0, 7);
@@ -325,14 +382,14 @@ router.post('/:id/sign', requireAuth, (req, res) => {
   const hash = bcrypt.hashSync(defaultPwd, 10);
 
   const tx = db.transaction(() => {
-    const code = nextDistributorCode(moduleRow.number);
+    const code = providedCode || nextDistributorCode(moduleRow.number);
     const info = db.prepare(`
       INSERT INTO users (full_name, email, phone, distributor_code, password_hash,
-                         role, module_id, productive_leader_id, firmado_por)
-      VALUES (?, ?, ?, ?, ?, 'distributor', ?, ?, ?)
+                         role, system_id, module_id, productive_leader_id, firmado_por)
+      VALUES (?, ?, ?, ?, ?, 'distributor', ?, ?, ?, ?)
     `).run(
       guest.full_name, guest.email, guest.phone, code, hash,
-      guest.contactor_module_id, newPlId, guest.contactor_id
+      finalSystemId, finalModuleId, finalPlId || null, guest.contactor_id
     );
 
     db.prepare(`
@@ -368,9 +425,9 @@ router.post('/:id/sign', requireAuth, (req, res) => {
     new_user: newUser,
     distributor_code: code,
     default_password: defaultPwd,
-    assignment_rule: guest.contactor_role === 'productive_leader'
-      ? 'Contactador es Líder Productivo → asignado directo a su mesa'
-      : 'Contactador no es PL → asignado a la mesa de su Líder Productivo',
+    assignment_rule: newUser.productive_leader_name
+      ? `Asignado a la mesa de ${newUser.productive_leader_name}`
+      : 'Sin mesa productiva asignada',
   });
 });
 

@@ -202,11 +202,22 @@ router.patch('/:id', requireAuth, (req, res) => {
   if (!target) return res.status(404).json({ error: 'Usuario no encontrado' });
   if (!canActOn(req.user, target)) return res.status(403).json({ error: 'No tienes acceso a este usuario' });
 
-  const { full_name, email, phone, module_id, productive_leader_id, active, password, bhip_rank, system_id, role } = req.body || {};
+  const { full_name, email, phone, module_id, productive_leader_id, active, password, bhip_rank, system_id, role, distributor_code } = req.body || {};
   const fields = [], values = [];
   if (full_name !== undefined) { fields.push('full_name = ?'); values.push(full_name); }
   if (email !== undefined)     { fields.push('email = ?');     values.push(email ? email.toLowerCase().trim() : null); }
   if (phone !== undefined)     { fields.push('phone = ?');     values.push(phone); }
+  // ID/código de distribuidor: editable por Líder de Módulo hacia arriba.
+  if (distributor_code !== undefined) {
+    if (!['lider_supremo', 'system_leader', 'module_leader'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'No tienes permiso para cambiar el ID de distribuidor' });
+    }
+    const code = String(distributor_code).toUpperCase().trim();
+    if (!code) return res.status(400).json({ error: 'El ID de distribuidor no puede estar vacío' });
+    const clash = db.prepare('SELECT id FROM users WHERE distributor_code = ? AND id != ?').get(code, req.params.id);
+    if (clash) return res.status(409).json({ error: 'El ID de distribuidor ya está en uso' });
+    fields.push('distributor_code = ?'); values.push(code);
+  }
   // Cambio de rol (jerarquía):
   //   lider_supremo → cualquier rol.
   //   system_leader → solo module_leader, productive_leader, distributor (no puede crear pares ni superiores).
