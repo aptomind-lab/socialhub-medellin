@@ -5,6 +5,17 @@
   const $ = (id) => document.getElementById(id);
   const $$ = (sel, ctx = document) => Array.from(ctx.querySelectorAll(sel));
 
+  // lider_modulo/lider_sistema/lider_supremo también tienen mesa propia — deben
+  // poder aparecer como "mesa" en los selects de asignación, igual que un PL.
+  const MESA_OWNER_ROLES = ['productive_leader', 'module_leader', 'system_leader', 'lider_supremo'];
+  const isMesaOwner = (u) => MESA_OWNER_ROLES.includes(u.role);
+  const MESA_OWNER_ROLE_TAG = { module_leader: 'Líder Módulo', system_leader: 'Líder Sistema', lider_supremo: 'Líder Supremo' };
+  function mesaOwnerLabel(p) {
+    const tag = MESA_OWNER_ROLE_TAG[p.role];
+    const modTag = p.module_number ? ' · M' + p.module_number : '';
+    return tag ? `${p.full_name} — ${tag}${modTag}` : `${p.full_name}${modTag}`;
+  }
+
   let token = localStorage.getItem(STORAGE_TOKEN);
   let me = null;
   let cachedModules = [];
@@ -1318,7 +1329,7 @@
       `<option value="${m.id}" ${m.id === u.module_id ? 'selected' : ''}>M${m.number} — ${m.name}${m.system_name ? ' · ' + m.system_name : ''}</option>`
     ).join('');
     const plOpts = cachedProductiveLeaders.map((p) =>
-      `<option value="${p.id}" ${p.id === u.productive_leader_id ? 'selected' : ''}>${p.full_name}</option>`
+      `<option value="${p.id}" ${p.id === u.productive_leader_id ? 'selected' : ''}>${mesaOwnerLabel(p)}</option>`
     ).join('');
 
     openModal(`Editar usuario — ${u.full_name}`, `
@@ -1356,7 +1367,7 @@
     const all = await api('/api/users');
     const users = all.users;
     cachedDistributors = users.filter((u) => u.role === 'distributor');
-    cachedProductiveLeaders = users.filter((u) => u.role === 'productive_leader');
+    cachedProductiveLeaders = users.filter(isMesaOwner);
   }
 
   const ROLE_LABEL = {
@@ -1499,7 +1510,7 @@
     const role = $('users-role-filter').value;
     const data = await api('/api/users' + qs({ role, module_id: getFilters().module_id }));
     cachedDistributors = data.users.filter((u) => u.role === 'distributor');
-    cachedProductiveLeaders = data.users.filter((u) => u.role === 'productive_leader');
+    cachedProductiveLeaders = data.users.filter(isMesaOwner);
 
     $('users-tbody').innerHTML = data.users.map((u) => {
       const blocked = u.blocked;
@@ -1632,8 +1643,8 @@
       const role = $('nu-role').value;
       const modId = $('nu-module').value;
       $('nu-pl-wrap').style.display = role === 'distributor' ? '' : 'none';
-      const pls = cachedProductiveLeaders.filter((p) => !modId || p.module_id == modId);
-      $('nu-pl').innerHTML = pls.length ? pls.map((p) => `<option value="${p.id}">${p.full_name}</option>`).join('') : '<option value="">— sin líder productivo —</option>';
+      const pls = cachedProductiveLeaders.filter((p) => !modId || p.module_id == modId || !p.module_id);
+      $('nu-pl').innerHTML = pls.length ? pls.map((p) => `<option value="${p.id}">${mesaOwnerLabel(p)}</option>`).join('') : '<option value="">— sin líder productivo —</option>';
       $('nu-module-wrap').style.display = (role === 'system_leader' || role === 'lider_supremo') ? 'none' : '';
       // Campo "nombre del sistema" solo si actor es lider_supremo creando un SL
       const ssWrap = $('nu-system-name-wrap');
@@ -1970,12 +1981,11 @@
 
     function refreshPl() {
       const modId = $('sign-module').value;
-      const pls = cachedProductiveLeaders.filter((p) => !modId || p.module_id == modId);
+      const pls = cachedProductiveLeaders.filter((p) => !modId || p.module_id == modId || !p.module_id);
       $('sign-pl').innerHTML = (pls.length ? pls : cachedProductiveLeaders)
         .map((p) => {
-          const modTag = p.module_number ? ' · M' + p.module_number : '';
           const sel = p.id === info.default_productive_leader_id ? ' selected' : '';
-          return `<option value="${p.id}"${sel}>${p.full_name}${modTag}</option>`;
+          return `<option value="${p.id}"${sel}>${mesaOwnerLabel(p)}</option>`;
         }).join('') || '<option value="">— sin líder productivo —</option>';
     }
     refreshPl();

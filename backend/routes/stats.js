@@ -1,7 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { requireAuth, scopeUsersClause } = require('../middleware/auth');
-const { STAGES, STAGE_LABELS } = require('../utils/stages');
+const { STAGES, STAGE_LABELS, MESA_OWNER_ROLES } = require('../utils/stages');
 
 const router = express.Router();
 
@@ -437,18 +437,22 @@ router.get('/comparison', requireAuth, (req, res) => {
 });
 
 // ================= KPIs ESPECÍFICOS DE LÍDER PRODUCTIVO =================
-// Solo para productive_leader (o niveles superiores que quieran ver una mesa específica)
+// Para productive_leader (siempre su propia mesa) y para lider_modulo/sistema/supremo,
+// que ahora también tienen mesa propia: por defecto ven la suya; pueden pasar
+// productive_leader_id para ver otra mesa dentro de su scope.
 router.get('/team', requireAuth, (req, res) => {
   const { week_offset = 0, productive_leader_id } = req.query;
   const targetPLId = req.user.role === 'productive_leader'
     ? req.user.id
-    : (productive_leader_id ? parseInt(productive_leader_id, 10) : null);
+    : (productive_leader_id
+        ? parseInt(productive_leader_id, 10)
+        : (MESA_OWNER_ROLES.includes(req.user.role) ? req.user.id : null));
 
   if (!targetPLId) return res.status(400).json({ error: 'productive_leader_id requerido para este rol' });
 
   // Si el actor no es system_leader, validar que la mesa pertenezca a su módulo
   const pl = db.prepare('SELECT * FROM users WHERE id = ?').get(targetPLId);
-  if (!pl || pl.role !== 'productive_leader') return res.status(404).json({ error: 'Mesa no encontrada' });
+  if (!pl || !MESA_OWNER_ROLES.includes(pl.role)) return res.status(404).json({ error: 'Mesa no encontrada' });
   if (req.user.role === 'module_leader' && pl.module_id !== req.user.module_id) {
     return res.status(403).json({ error: 'Mesa fuera de tu módulo' });
   }

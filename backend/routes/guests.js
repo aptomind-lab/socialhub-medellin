@@ -4,7 +4,7 @@ const { customAlphabet } = require('nanoid');
 const db = require('../db');
 const { requireAuth, requireRole, scopeUsersClause } = require('../middleware/auth');
 const { refreshUserBlock, isContactorUsable, CONTACTOR_ROLES } = require('../utils/blocking');
-const { STAGES } = require('../utils/stages');
+const { STAGES, MESA_OWNER_ROLES } = require('../utils/stages');
 const { generateQrDataUrl, generateQrBuffer } = require('../utils/qrcode');
 const { sendQrEmail } = require('../utils/email');
 const colors = require('../utils/colors');
@@ -283,9 +283,18 @@ router.post('/:id/advance', requireAuth, (req, res) => {
   res.json({ ok: true, guest: db.prepare('SELECT * FROM guests WHERE id = ?').get(guest.id) });
 });
 
+// Devuelve el "dueño de mesa" (id de mesa → su fila de usuario) para poder
+// heredar module_id/system_id cuando la mesa es de un lider_modulo/sistema/supremo.
+function resolveMesaOwner(plId) {
+  if (!plId) return null;
+  return db.prepare('SELECT id, role, module_id, system_id FROM users WHERE id = ?').get(plId);
+}
+
 // Defaults sugeridos para el formulario de conversión (firma).
-// Módulo por defecto: el del líder que convierte (req.user); si no tiene, el del
-// contactador. Mesa por defecto: la del contactador (o él mismo si es PL).
+// Mesa por defecto: la del contactador (o él mismo si es dueño de mesa — PL,
+// lider_modulo, lider_sistema o lider_supremo, todos tienen mesa propia).
+// Módulo/sistema por defecto: los de esa mesa; si no aplica (p.ej. lider_supremo
+// no tiene módulo fijo), cae al líder que convierte y luego al contactador.
 // Código sugerido: siguiente secuencial del módulo — editable en el formulario.
 router.get('/:id/sign-info', requireAuth, (req, res) => {
   const guest = db.prepare(`
@@ -297,10 +306,11 @@ router.get('/:id/sign-info', requireAuth, (req, res) => {
   `).get(req.params.id);
   if (!guest) return res.status(404).json({ error: 'Invitado no encontrado' });
 
-  const defaultModuleId = req.user.module_id || guest.contactor_module_id || null;
-  const defaultPlId = guest.contactor_role === 'productive_leader'
+  const defaultPlId = MESA_OWNER_ROLES.includes(guest.contactor_role)
     ? guest.contactor_id
     : guest.contactor_pl_id;
+  const mesaOwner = resolveMesaOwner(defaultPlId);
+  const defaultModuleId = (mesaOwner && mesaOwner.module_id) || req.user.module_id || guest.contactor_module_id || null;
 
   let suggestedCode = '';
   if (defaultModuleId) {
@@ -320,9 +330,10 @@ router.get('/:id/sign-info', requireAuth, (req, res) => {
 });
 
 // Firma un guest: avanza a FIRMADO, sella signed_month, crea el users row.
-// El nuevo profesional hereda system_id/module_id del líder que lo convierte
-// (con fallback al módulo/sistema del contactador). El formulario permite ajustar
-// código de distribuidor, módulo y mesa productiva.
+// El nuevo profesional hereda system_id/module_id de su mesa (si es la de un
+// lider_modulo/sistema/supremo, trae su propio module/system fijo); si la mesa
+// no fija ninguno (p.ej. lider_supremo), cae al líder que convierte y luego al
+// contactador. El formulario permite ajustar código de distribuidor, módulo y mesa.
 router.post('/:id/sign', requireAuth, (req, res) => {
   const { notes, password, distributor_code, module_id, productive_leader_id } = req.body || {};
   const guest = db.prepare(`
@@ -346,26 +357,28 @@ router.post('/:id/sign', requireAuth, (req, res) => {
     });
   }
 
-  // Módulo: el enviado en el formulario, o por defecto el del líder que convierte,
-  // o el del contactador.
+  // Mesa: la enviada en el formulario, o por defecto la del contactador (o él
+  // mismo si es dueño de mesa — PL, lider_modulo, lider_sistema o lider_supremo).
+  const finalPlId = productive_leader_id
+    ? parseInt(productive_leader_id, 10)
+    : (MESA_OWNER_ROLES.includes(guest.contactor_role) ? guest.contactor_id : guest.contactor_pl_id);
+  const mesaOwner = resolveMesaOwner(finalPlId);
+
+  // Módulo: el enviado en el formulario, o por defecto el de la mesa (si es de un
+  // lider_modulo, ya trae su módulo fijo), o el del líder que convierte, o el del contactador.
   const finalModuleId = module_id
     ? parseInt(module_id, 10)
-    : (req.user.module_id || guest.contactor_module_id);
+    : ((mesaOwner && mesaOwner.module_id) || req.user.module_id || guest.contactor_module_id);
   if (!finalModuleId) {
     return res.status(400).json({ error: 'Falta el módulo — asígnalo en el formulario de conversión' });
   }
   const moduleRow = db.prepare('SELECT id, number, system_id FROM modules WHERE id = ?').get(finalModuleId);
   if (!moduleRow) return res.status(400).json({ error: 'Módulo inválido' });
 
-  // Sistema: hereda del líder que convierte; si no tiene (p.ej. lider_supremo),
-  // usa el del módulo elegido; en último caso el del contactador.
-  const finalSystemId = req.user.system_id || moduleRow.system_id || guest.contactor_system_id || null;
-
-  // Mesa: la enviada en el formulario, o por defecto la del contactador
-  // (o él mismo si es Líder Productivo).
-  const finalPlId = productive_leader_id
-    ? parseInt(productive_leader_id, 10)
-    : (guest.contactor_role === 'productive_leader' ? guest.contactor_id : guest.contactor_pl_id);
+  // Sistema: hereda de la mesa (lider_sistema/lider_modulo traen su system_id fijo);
+  // si no aplica (p.ej. lider_supremo), usa el del líder que convierte, luego el
+  // del módulo elegido, y en último caso el del contactador.
+  const finalSystemId = (mesaOwner && mesaOwner.system_id) || req.user.system_id || moduleRow.system_id || guest.contactor_system_id || null;
 
   // Código de distribuidor: el editado en el formulario (validando unicidad),
   // o el siguiente secuencial del módulo si no se envía.

@@ -60,4 +60,10 @@ const ROLE_LABELS = {
   distributor:        'Profesional Activo',
 };
 
-module.exports = { STAGES, STAGE_LABELS, SCANNABLE_STAGES, BOLETO_STAGES, BOLETO_FUNNEL_STAGES, nextStageAfterScan, ROLES, ROLE_LABELS };
+// Roles que tienen mesa productiva propia: además de productive_leader, todo
+// lider_modulo/lider_sistema/lider_supremo también actúa como líder productivo
+// de su propia mesa personal (sus invitados directos + cualquier distributor
+// cuyo productive_leader_id apunte a ellos).
+const MESA_OWNER_ROLES = ['productive_leader', 'module_leader', 'system_leader', 'lider_supremo'];
+
+module.exports = { STAGES, STAGE_LABELS, SCANNABLE_STAGES, BOLETO_STAGES, BOLETO_FUNNEL_STAGES, nextStageAfterScan, ROLES, ROLE_LABELS, MESA_OWNER_ROLES };
