@@ -2650,11 +2650,25 @@
 
   // ============ MODAL ============
   function openModal(title, html) {
+    const modal = $('modal');
+    modal.classList.remove('closing');
     $('modal-title').textContent = title;
     $('modal-body').innerHTML = `<div class="modal-body">${html}</div>`;
-    $('modal').hidden = false;
+    modal.hidden = false;
   }
-  function closeModal() { $('modal').hidden = true; }
+  // Anima la salida (fade + scale, ver .modal.closing en styles.css) antes de
+  // ocultar. Sin motion reducido saltamos la espera para no bloquear el click.
+  function closeModal() {
+    const modal = $('modal');
+    if (modal.hidden) return;
+    const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduceMotion) { modal.hidden = true; return; }
+    modal.classList.add('closing');
+    setTimeout(() => {
+      modal.hidden = true;
+      modal.classList.remove('closing');
+    }, 220);
+  }
   $('modal-close').addEventListener('click', closeModal);
   $('modal').addEventListener('click', (e) => { if (e.target.id === 'modal') closeModal(); });
 

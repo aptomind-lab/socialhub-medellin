@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#0B1B2B" />
   <title>SHM — Dashboard</title>
-  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Jost:wght@300;400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="assets/styles.css" />
 </head>
 <body>
@@ -28,7 +27,7 @@
           <button class="primary" type="submit">Ingresar</button>
           <div id="login-error" class="error" hidden></div>
         </form>
-        <a href="#" id="forgot-link" style="display:inline-block;margin-top:18px;font-size:12px;color:var(--gold-400);text-decoration:none;letter-spacing:1px;">¿Olvidaste tu contraseña?</a>
+        <a href="#" id="forgot-link" class="text-link">¿Olvidaste tu contraseña?</a>
       </div>
     </div>
   </section>
@@ -47,7 +46,7 @@
           <button class="primary" type="submit">Enviar enlace</button>
           <div id="fg-feedback" class="hint" style="margin-top:14px;" hidden></div>
         </form>
-        <a href="#" id="fg-back" style="display:inline-block;margin-top:18px;font-size:12px;color:var(--gold-400);">← Volver al login</a>
+        <a href="#" id="fg-back" class="text-link">← Volver al login</a>
       </div>
     </div>
   </section>
@@ -167,7 +166,7 @@
             <h3>Registrar BV Personal</h3>
             <span class="muted" id="promo-cycle-range" style="font-size:12px;">—</span>
           </header>
-          <form id="promo-form" class="form-row" style="grid-template-columns: 1fr 1fr 1fr auto; gap:12px;">
+          <form id="promo-form" class="form-row form-row--quad">
             <div class="field"><label>BV Personal</label><input type="number" inputmode="numeric" id="promo-bv" min="0" required placeholder="0" /></div>
             <div class="field"><label># de Orden</label><input type="text" id="promo-order" required placeholder="Ej. 12345" /></div>
             <div class="field"><label>Fecha</label><input type="date" id="promo-date" required /></div>
@@ -227,7 +226,7 @@
         <div class="alert-grid">
           <article class="alert-block" data-bucket="no_messages_48h">
             <header class="alert-block-head">
-              <span class="alert-icon" style="background:var(--gold-500);">◷</span>
+              <span class="alert-icon alert-icon--accent">◷</span>
               <div>
                 <h3>Sin mensajes en 48h</h3>
                 <p>Profesionales Activos que no actualizan su registro de mensajes</p>
@@ -238,7 +237,7 @@
           </article>
           <article class="alert-block" data-bucket="near_two_weeks_bit">
             <header class="alert-block-head">
-              <span class="alert-icon" style="background:#D9B871;">⌛</span>
+              <span class="alert-icon alert-icon--warning">⌛</span>
               <div>
                 <h3>Cerca de 2 semanas desde B.I.T</h3>
                 <p>Seguimientos en ventana final (11–16 días) sin firmar</p>
@@ -249,7 +248,7 @@
           </article>
           <article class="alert-block" data-bucket="two_weeks_wg">
             <header class="alert-block-head">
-              <span class="alert-icon" style="background:var(--teal-400);">✦</span>
+              <span class="alert-icon alert-icon--positive">✦</span>
               <div>
                 <h3>2 semanas de WG consecutivas</h3>
                 <p>Alta probabilidad de firma — destacar y dar empuje final</p>
@@ -280,20 +279,20 @@
       <section class="view" data-view="funnel">
         <h2 class="view-title">Embudo de prospección</h2>
         <article class="panel">
-          <div class="filter-bar" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;max-width:none;margin-bottom:18px;">
-            <label style="font-size:11px;letter-spacing:1.5px;color:var(--muted);">Ver por:</label>
-            <select id="funnel-mode" style="max-width:180px;">
+          <div class="filter-bar filter-bar--inline mb-5">
+            <label class="field-label-sm">Ver por:</label>
+            <select id="funnel-mode" class="w-180">
               <option value="custom">Rango personalizado</option>
               <option value="week">Semana actual</option>
               <option value="month" selected>Mes actual</option>
               <option value="bit_cycle">Ciclo B.I.T</option>
             </select>
-            <span id="funnel-date-range" style="display:flex;gap:10px;align-items:center;">
-              <input type="date" id="funnel-from" style="max-width:160px;" />
+            <span id="funnel-date-range" class="inline-flex-gap">
+              <input type="date" id="funnel-from" class="w-160" />
               <span class="muted">→</span>
-              <input type="date" id="funnel-to" style="max-width:160px;" />
+              <input type="date" id="funnel-to" class="w-160" />
             </span>
-            <select id="funnel-bit-date" style="max-width:220px;display:none;"></select>
+            <select id="funnel-bit-date" class="w-220" style="display:none;"></select>
           </div>
           <div id="funnel-list"></div>
         </article>
@@ -313,22 +312,22 @@
           Completar <strong>2 semanas consecutivas</strong> dispara la probabilidad de firma.
         </p>
         <div class="kpi-grid">
-          <article class="kpi" style="border-color: rgba(70, 176, 168, 0.4);">
-            <div class="overline" style="color: var(--teal-400);">🟢 Sólido</div>
+          <article class="kpi kpi--positive">
+            <div class="overline overline--positive">🟢 Sólido</div>
             <div class="kpi-label">2+ semanas consecutivas completas</div>
-            <div class="kpi-value" id="wg-solid" style="color: var(--teal-400);">—</div>
+            <div class="kpi-value kpi-value--positive" id="wg-solid">—</div>
             <div class="kpi-sub">Alta probabilidad de firma</div>
           </article>
-          <article class="kpi" style="border-color: rgba(217, 184, 113, 0.4);">
-            <div class="overline" style="color: var(--gold-400);">🟡 Irregular</div>
+          <article class="kpi kpi--accent">
+            <div class="overline">🟡 Irregular</div>
             <div class="kpi-label">Asistencia incompleta</div>
-            <div class="kpi-value" id="wg-irregular" style="color: var(--gold-400);">—</div>
+            <div class="kpi-value kpi-value--accent" id="wg-irregular">—</div>
             <div class="kpi-sub">Requiere refuerzo</div>
           </article>
-          <article class="kpi" style="border-color: rgba(255, 123, 61, 0.5);">
-            <div class="overline" style="color: #FFB07A;">🟠 En riesgo</div>
+          <article class="kpi kpi--warning">
+            <div class="overline overline--warning">🟠 En riesgo</div>
             <div class="kpi-label">Color Naranja</div>
-            <div class="kpi-value" id="wg-orange" style="color: #FFB07A;">—</div>
+            <div class="kpi-value kpi-value--warning" id="wg-orange">—</div>
             <div class="kpi-sub">2 faltas consecutivas</div>
           </article>
         </div>
@@ -394,19 +393,19 @@
             <h3>Embudo individual</h3>
             <input id="guest-search" type="text" placeholder="Buscar por nombre, correo o teléfono..." class="search" />
           </header>
-          <div class="filter-bar" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;max-width:none;">
-            <label style="font-size:11px;letter-spacing:1.5px;color:var(--muted);">Último escaneo:</label>
-            <input type="date" id="guests-scan-from" style="max-width:160px;" />
+          <div class="filter-bar filter-bar--inline">
+            <label class="field-label-sm">Último escaneo:</label>
+            <input type="date" id="guests-scan-from" class="w-160" />
             <span class="muted" style="font-size:11px;">→</span>
-            <input type="date" id="guests-scan-to" style="max-width:160px;" />
+            <input type="date" id="guests-scan-to" class="w-160" />
             <button class="ghost-btn" id="guests-scan-clear" type="button">Limpiar</button>
-            <select id="guests-system-filter" style="max-width:200px;display:none;">
+            <select id="guests-system-filter" class="w-200" style="display:none;">
               <option value="">Todos los sistemas</option>
             </select>
-            <select id="guests-module-filter" style="max-width:200px;display:none;">
+            <select id="guests-module-filter" class="w-200" style="display:none;">
               <option value="">Todos los módulos</option>
             </select>
-            <select id="guests-stage-filter" style="max-width:200px;">
+            <select id="guests-stage-filter" class="w-200">
               <option value="">Todas las etapas</option>
               <option value="REGISTRO">Book</option>
               <option value="BOM">Show B.O.M</option>
@@ -416,14 +415,14 @@
               <option value="WORKING_GROUP">Working Group</option>
               <option value="FIRMADO">Profesional Firmado</option>
             </select>
-            <select id="guests-boleto-filter" style="max-width:200px;">
+            <select id="guests-boleto-filter" class="w-200">
               <option value="">Boletos: todos</option>
               <option value="BOLETO_PAGO">Pago</option>
               <option value="BOLETO_ABONADO">Abonado</option>
               <option value="BOLETO_NO_PAGO">No Pago</option>
               <option value="BOLETO_NO_INTERESADO">No Interesado</option>
             </select>
-            <select id="guests-color-filter" style="max-width:220px;">
+            <select id="guests-color-filter" class="w-220">
               <option value="">Todos los colores</option>
               <option value="none">Sin color</option>
               <option value="light_green">Verde claro</option>
@@ -447,7 +446,7 @@
 
         <article class="panel">
           <header class="panel-head"><h3>Usuario y fecha</h3></header>
-          <div class="form-row" style="grid-template-columns: 2fr 1fr; gap:14px;">
+          <div class="form-row form-row--duo">
             <div class="field"><label>Usuario</label><select id="msg-user"></select></div>
             <div class="field"><label>Fecha</label><input type="date" id="msg-date" /></div>
           </div>
@@ -457,30 +456,30 @@
           <article class="panel">
             <header class="panel-head">
               <h3>Mensajes tradicionales</h3>
-              <span class="tag gold" style="font-size:10px;">Tipo A</span>
+              <span class="tag gold tag--xs">Tipo A</span>
             </header>
-            <form id="msg-form" class="form-row" style="grid-template-columns: 1fr 1fr 1fr auto; gap:12px;">
+            <form id="msg-form" class="form-row form-row--quad">
               <div class="field"><label>Mensajes enviados</label><input type="number" inputmode="numeric" id="msg-count" min="0" placeholder="0" /></div>
               <div class="field"><label>Leads generados</label><input type="number" inputmode="numeric" id="msg-leads" min="0" value="0" /></div>
               <div class="field"><label>Books del día</label><input type="number" inputmode="numeric" id="msg-books" min="0" value="0" /></div>
               <button class="primary sm" type="submit">Guardar</button>
             </form>
-            <div class="hint" id="msg-existing" style="color:var(--teal-400);"></div>
+            <div class="hint hint--positive" id="msg-existing"></div>
             <div class="hint">Si no actualizas tu actividad en más de 48 horas, tu código se bloquea automáticamente. Books pueden ser 0.</div>
           </article>
 
           <article class="panel">
             <header class="panel-head">
               <h3>TikTok Live</h3>
-              <span class="tag" style="background:rgba(255,0,80,0.15);color:#FF6B95;border:1px solid rgba(255,0,80,0.3);font-size:10px;">Tipo B</span>
+              <span class="tag tag--xs tag--tiktok">Tipo B</span>
             </header>
-            <form id="tiktok-form" class="form-row" style="grid-template-columns: 1fr 1fr 1fr auto; gap:12px;">
+            <form id="tiktok-form" class="form-row form-row--quad">
               <div class="field"><label>Minutos en live</label><input type="number" inputmode="numeric" id="tt-minutes" min="0" placeholder="0" /></div>
               <div class="field"><label>Leads generados</label><input type="number" inputmode="numeric" id="tt-leads" min="0" placeholder="0" /></div>
               <div class="field"><label>Books cerrados</label><input type="number" inputmode="numeric" id="tt-books" min="0" placeholder="0" /></div>
               <button class="primary sm" type="submit">Guardar</button>
             </form>
-            <div class="hint" id="tt-existing" style="color:#FF6B95;"></div>
+            <div class="hint text--tiktok" id="tt-existing"></div>
             <div class="hint">Se registra para la misma fecha del bloque superior. Si solo hiciste TikTok ese día, guarda solo este form.</div>
           </article>
         </div>
@@ -543,7 +542,7 @@
           </div>
 
           <div id="sc-manual-pane" hidden style="margin-top:12px;">
-            <label style="display:block;font-size:10px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;margin-bottom:6px;">Correo del invitado</label>
+            <label class="field-label-sm" style="display:block;margin-bottom:6px;">Correo del invitado</label>
             <input id="sc-manual-input" type="email" inputmode="email" placeholder="correo@dominio.com" autocomplete="off" style="margin-bottom:10px;" />
             <button class="primary" id="sc-manual-submit">Buscar</button>
           </div>
@@ -578,10 +577,10 @@
         <h2 class="view-title">Tus logros</h2>
 
         <div class="kpi-grid">
-          <article class="kpi" style="border-color:#FF7B3D;">
-            <div class="overline" style="color:#FF7B3D;">🔥 Racha actual</div>
+          <article class="kpi kpi--warning">
+            <div class="overline overline--warning">🔥 Racha actual</div>
             <div class="kpi-label">Días consecutivos</div>
-            <div class="kpi-value" id="g-streak" style="color:#FF7B3D;">0</div>
+            <div class="kpi-value kpi-value--warning" id="g-streak">0</div>
             <div class="kpi-sub" id="g-streak-msg">Sigue así 💪</div>
           </article>
           <article class="kpi">
@@ -589,10 +588,10 @@
             <div class="kpi-label">Récord personal</div>
             <div class="kpi-value" id="g-longest">0</div>
           </article>
-          <article class="kpi" style="border-color:var(--gold-500);">
+          <article class="kpi kpi--accent">
             <div class="overline">XP Total</div>
             <div class="kpi-label">Puntos de experiencia acumulados</div>
-            <div class="kpi-value" id="g-xp">0</div>
+            <div class="kpi-value kpi-value--accent" id="g-xp">0</div>
           </article>
         </div>
 
@@ -620,7 +619,7 @@
         <article class="panel">
           <header class="panel-head">
             <h3>Mi calendario de actividad</h3>
-            <input type="month" id="cal-month" style="max-width:170px;" />
+            <input type="month" id="cal-month" class="w-170" />
           </header>
           <div id="cal-summary" class="cal-summary">—</div>
           <div id="cal-grid" class="cal-grid"></div>
