@@ -175,32 +175,32 @@ router.get('/funnel', requireAuth, (req, res) => {
   const boletoBreakdown = {};
   for (const stage of FUNNEL_STAGES) {
     if (stage === 'BOLETOS') {
-      // Suma de Pago + Abonado + No Pago (excluye No Interesado del conteo del embudo).
-      const subs = ['BOLETO_PAGO','BOLETO_ABONADO','BOLETO_NO_PAGO'];
-      let total = 0;
-      for (const sub of subs) {
-        const r = db.prepare(`
-          SELECT COUNT(DISTINCT h.guest_id) AS c
-          FROM stage_history h
-          JOIN guests g ON g.id = h.guest_id
-          JOIN users u ON u.id = g.distributor_id
-          WHERE h.to_stage = ? AND date(h.scanned_at, '-5 hours') BETWEEN ? AND ?
-          ${scope.sql} ${extraSql}
-        `).get(sub, from, to, ...scope.params, ...extraParams);
-        boletoBreakdown[sub] = r.c;
-        total += r.c;
-      }
-      // No interesado se cuenta aparte (no entra al embudo gráfico).
-      const ni = db.prepare(`
-        SELECT COUNT(DISTINCT h.guest_id) AS c
+      // Cada invitado cuenta UNA sola vez, bajo su sub-estado de boleto más
+      // reciente dentro del rango (evita que aparezca en dos categorías si
+      // cambió de estado, p.ej. No Pago → Pago).
+      const BOLETO_SUBS = ['BOLETO_PAGO','BOLETO_ABONADO','BOLETO_NO_PAGO','BOLETO_NO_INTERESADO'];
+      const rows = db.prepare(`
+        SELECT h.to_stage AS sub, COUNT(DISTINCT h.guest_id) AS c
         FROM stage_history h
         JOIN guests g ON g.id = h.guest_id
         JOIN users u ON u.id = g.distributor_id
-        WHERE h.to_stage = 'BOLETO_NO_INTERESADO' AND date(h.scanned_at, '-5 hours') BETWEEN ? AND ?
-        ${scope.sql} ${extraSql}
-      `).get(from, to, ...scope.params, ...extraParams);
-      boletoBreakdown.BOLETO_NO_INTERESADO = ni.c;
-      stageCounts[stage] = total;
+        WHERE h.to_stage IN ('BOLETO_PAGO','BOLETO_ABONADO','BOLETO_NO_PAGO','BOLETO_NO_INTERESADO')
+          AND date(h.scanned_at, '-5 hours') BETWEEN ? AND ?
+          ${scope.sql} ${extraSql}
+          AND h.scanned_at = (
+            SELECT MAX(h2.scanned_at) FROM stage_history h2
+            WHERE h2.guest_id = h.guest_id
+              AND h2.to_stage IN ('BOLETO_PAGO','BOLETO_ABONADO','BOLETO_NO_PAGO','BOLETO_NO_INTERESADO')
+              AND date(h2.scanned_at, '-5 hours') BETWEEN ? AND ?
+          )
+        GROUP BY h.to_stage
+      `).all(from, to, ...scope.params, ...extraParams, from, to);
+
+      BOLETO_SUBS.forEach((sub) => { boletoBreakdown[sub] = 0; });
+      rows.forEach((r) => { boletoBreakdown[r.sub] = r.c; });
+
+      // Suma de Pago + Abonado + No Pago (excluye No Interesado del conteo del embudo).
+      stageCounts[stage] = boletoBreakdown.BOLETO_PAGO + boletoBreakdown.BOLETO_ABONADO + boletoBreakdown.BOLETO_NO_PAGO;
     } else {
       const row = db.prepare(`
         SELECT COUNT(DISTINCT h.guest_id) AS c
@@ -548,6 +548,17 @@ router.get('/funnel/guests', requireAuth, (req, res) => {
     : [stage];
   const order = { BOLETO_PAGO: 1, BOLETO_ABONADO: 2, BOLETO_NO_PAGO: 3, BOLETO_NO_INTERESADO: 4 };
 
+  // En BOLETOS cada invitado debe aparecer UNA sola vez, bajo su sub-estado más
+  // reciente dentro del rango (evita que salga en dos categorías si cambió de
+  // estado, p.ej. No Pago → Pago). Mismo criterio que el conteo del embudo.
+  const boletoLatestFilter = stage === 'BOLETOS' ? `
+      AND h.scanned_at = (
+        SELECT MAX(h2.scanned_at) FROM stage_history h2
+        WHERE h2.guest_id = h.guest_id
+          AND h2.to_stage IN ('BOLETO_PAGO','BOLETO_ABONADO','BOLETO_NO_PAGO','BOLETO_NO_INTERESADO')
+          AND date(h2.scanned_at, '-5 hours') BETWEEN ? AND ?
+      )` : '';
+
   const sql = `
     SELECT g.id, g.full_name, g.email, g.phone,
            u.full_name AS distributor_name,
@@ -561,9 +572,11 @@ router.get('/funnel/guests', requireAuth, (req, res) => {
     WHERE h.to_stage IN (${stagesToQuery.map(()=>'?').join(',')})
       AND date(h.scanned_at, '-5 hours') BETWEEN ? AND ?
       ${scope.sql} ${extraSql}
+      ${boletoLatestFilter}
     ORDER BY h.scanned_at DESC
   `;
-  rows = db.prepare(sql).all(...stagesToQuery, from, to, ...scope.params, ...extraParams);
+  const boletoLatestParams = stage === 'BOLETOS' ? [from, to] : [];
+  rows = db.prepare(sql).all(...stagesToQuery, from, to, ...scope.params, ...extraParams, ...boletoLatestParams);
 
   // Si es BOLETOS, ordenar Pago → Abonado → NoPago → NoInteresado, luego por fecha desc.
   if (stage === 'BOLETOS') {
