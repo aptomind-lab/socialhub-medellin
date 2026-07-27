@@ -286,6 +286,7 @@
               <option value="week">Semana actual</option>
               <option value="month" selected>Mes actual</option>
               <option value="bit_cycle">Ciclo B.I.T</option>
+              <option value="bom_cycle">Ciclo B.O.M</option>
             </select>
             <span id="funnel-date-range" class="inline-flex-gap">
               <input type="date" id="funnel-from" class="w-160" />
@@ -293,6 +294,7 @@
               <input type="date" id="funnel-to" class="w-160" />
             </span>
             <select id="funnel-bit-date" class="w-220" style="display:none;"></select>
+            <select id="funnel-bom-date" class="w-220" style="display:none;"></select>
           </div>
           <div id="funnel-list"></div>
         </article>
@@ -414,6 +416,9 @@
               <option value="PLAN_TRABAJO">Plan de Trabajo</option>
               <option value="WORKING_GROUP">Working Group</option>
               <option value="FIRMADO">Profesional Firmado</option>
+            </select>
+            <select id="guests-bom-filter" class="w-220">
+              <option value="">Todos los Ciclos B.O.M</option>
             </select>
             <select id="guests-boleto-filter" class="w-200">
               <option value="">Boletos: todos</option>

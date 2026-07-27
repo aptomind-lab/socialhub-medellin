@@ -110,7 +110,7 @@ router.post('/register', registerLimiter, async (req, res) => {
 
 // LISTA — filtrada por jerarquía. Joins contra users (distributor) para aplicar scope
 router.get('/', requireAuth, (req, res) => {
-  const { module_id, system_id, stage, distributor_id, from, to, q, color, scan_from, scan_to, boleto_sub } = req.query;
+  const { module_id, system_id, stage, distributor_id, from, to, q, color, scan_from, scan_to, boleto_sub, bom_date } = req.query;
   const scope = scopeUsersClause(req.user, 'u');
   let sql = `
     SELECT g.*, u.full_name AS distributor_name, u.distributor_code,
@@ -148,6 +148,7 @@ router.get('/', requireAuth, (req, res) => {
     sql += ' AND u.system_id = ?'; params.push(system_id);
   }
   if (color)          { sql += ' AND g.color = ?'; params.push(color); }
+  if (bom_date)       { sql += ' AND g.bom_assigned_date = ?'; params.push(bom_date); }
   if (distributor_id) { sql += ' AND g.distributor_id = ?'; params.push(distributor_id); }
   if (from)           { sql += ' AND date(g.created_at) >= ?'; params.push(from); }
   if (to)             { sql += ' AND date(g.created_at) <= ?'; params.push(to); }

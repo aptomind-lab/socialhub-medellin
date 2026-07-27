@@ -648,14 +648,19 @@
     const fFrom = $('funnel-from'), fTo = $('funnel-to');
     const rangeWrap = $('funnel-date-range');
     const bitSel = $('funnel-bit-date');
+    const bomSel = $('funnel-bom-date');
     const fmt = (d) => d.toISOString().slice(0, 10);
 
-    // Toggle controles: en Ciclo B.I.T se usa el selector por fecha, no un rango.
-    if (rangeWrap) rangeWrap.style.display = mode === 'bit_cycle' ? 'none' : '';
+    // Toggle controles: en Ciclo B.I.T / Ciclo B.O.M se usa el selector por fecha, no un rango.
+    if (rangeWrap) rangeWrap.style.display = (mode === 'bit_cycle' || mode === 'bom_cycle') ? 'none' : '';
     if (bitSel)    bitSel.style.display    = mode === 'bit_cycle' ? '' : 'none';
+    if (bomSel)    bomSel.style.display    = mode === 'bom_cycle' ? '' : 'none';
 
     if (mode === 'bit_cycle') {
       return loadBitCycleMode();
+    }
+    if (mode === 'bom_cycle') {
+      return loadBomCycleMode();
     }
 
     // Auto-rellenar fechas según modo (a menos que sea 'custom').
@@ -970,6 +975,95 @@
         ${stuckHtml}
         <div class="table-wrap" style="margin-top:18px;overflow-x:auto;"><table class="table">
           <thead><tr><th>Invitado</th><th>Distribuidor</th><th>Mód</th><th>B.I.T</th><th>P.Talk</th><th>P.Trabajo</th><th>Firmado</th><th>Último escaneo</th><th>Estado</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table></div>
+      `;
+    } catch (e) {
+      $('funnel-list').innerHTML = `<div class="error">${e.message}</div>`;
+    }
+  }
+
+  // ============ CICLO B.O.M ============
+  // Selector de B.O.M específico por fecha. Popula el dropdown y delega en loadBomCycle
+  // con el mismo día como rango (from=to=fecha elegida) para acotar a los invitados
+  // asignados exactamente a ese B.O.M.
+  async function loadBomCycleMode() {
+    const bomSel = $('funnel-bom-date');
+    if (!bomSel) return;
+    // Recarga la lista de fechas B.O.M disponibles (respetando el filtro de módulo del topbar).
+    let dates = [];
+    try {
+      const r = await api('/api/stats/funnel/bom-dates' + qs(getFilters()));
+      dates = r.dates || [];
+    } catch (e) {
+      $('funnel-list').innerHTML = `<div class="error">${e.message}</div>`;
+      return;
+    }
+    if (!dates.length) {
+      bomSel.innerHTML = '<option value="">Sin B.O.M disponibles</option>';
+      $('funnel-list').innerHTML = '<div class="muted">No hay B.O.M registrados en tu scope.</div>';
+      return;
+    }
+    // Preservar la selección previa si sigue vigente, sino elegir el B.O.M más reciente.
+    const prev = bomSel.value;
+    bomSel.innerHTML = dates
+      .map((d) => `<option value="${d.date}">B.O.M — ${formatBitDateLabel(d.date)} (${d.count})</option>`)
+      .join('');
+    if (prev && dates.some((d) => d.date === prev)) bomSel.value = prev;
+    const chosen = bomSel.value;
+    const range = { from: chosen, to: chosen };
+    window._shFunnelRange = range;
+    return loadBomCycle(range);
+  }
+
+  // Cohort: invitados asignados a un B.O.M dentro del rango. Book = asignado, Show = llegó a BOM.
+  async function loadBomCycle(range) {
+    $('funnel-list').innerHTML = '<div class="muted">Cargando ciclo B.O.M...</div>';
+    try {
+      const data = await api('/api/stats/funnel/bom-cycle' + qs({ ...getFilters(), ...range }));
+      const total = data.total || 0;
+      const shows = data.shows || 0;
+      const showPct = total ? Math.round((shows / total) * 1000) / 10 : 0;
+
+      const rangeTxt = range.from === range.to
+        ? `del B.O.M del ${formatBitDateLabel(range.from)}`
+        : `cuyo B.O.M ocurrió entre ${range.from} y ${range.to}`;
+
+      const bars = `
+        <div class="overline">Ciclo B.O.M · ${total} invitado(s)</div>
+        <div class="hint" style="margin-bottom:10px;">Cohorte: invitados asignados ${rangeTxt}.</div>
+        <div class="funnel-row">
+          <div class="funnel-label">Book</div>
+          <div class="funnel-bar"><div class="funnel-fill" style="width:100%"></div></div>
+          <div class="funnel-count">${total}</div>
+        </div>
+        <div class="funnel-row">
+          <div class="funnel-label">Show B.O.M</div>
+          <div class="funnel-bar"><div class="funnel-fill" style="width:${total ? (shows / total) * 100 : 0}%"></div></div>
+          <div class="funnel-count">${shows}</div>
+          <div class="funnel-convo ${showPct >= 50 ? 'good' : showPct >= 25 ? 'mid' : 'low'}">${showPct}%</div>
+        </div>
+      `;
+
+      const rows = (data.guests || []).map((g) => {
+        const lastScan = fmtLocal(g.last_scan_at);
+        const statusTag = g.is_show
+          ? '<span class="tag green">✦ Show</span>'
+          : '<span class="tag gold">Book</span>';
+        return `<tr>
+          <td><strong>${g.full_name}</strong><div class="muted" style="font-size:11px;">${g.email || ''}</div></td>
+          <td>${g.distributor_name || '—'}</td>
+          <td>${g.module_number ? `M${g.module_number}` : '—'}</td>
+          <td class="muted" style="font-size:11px;">${g.bom_assigned_date || '—'}</td>
+          <td class="muted" style="font-size:11px;">${lastScan}</td>
+          <td>${statusTag}</td>
+        </tr>`;
+      }).join('') || '<tr><td colspan="6" class="muted">Sin invitados en este ciclo.</td></tr>';
+
+      $('funnel-list').innerHTML = `
+        ${bars}
+        <div class="table-wrap" style="margin-top:18px;overflow-x:auto;"><table class="table">
+          <thead><tr><th>Invitado</th><th>Distribuidor</th><th>Mód</th><th>B.O.M</th><th>Último escaneo</th><th>Estado</th></tr></thead>
           <tbody>${rows}</tbody>
         </table></div>
       `;
@@ -1792,13 +1886,30 @@
     _guestsFiltersPrepared = true;
   }
 
+  // Popula el dropdown "Ciclo B.O.M" de Invitados con las fechas B.O.M disponibles
+  // en el scope del actor, preservando la selección previa si sigue vigente.
+  async function loadBomFilterOptions() {
+    const sel = $('guests-bom-filter');
+    if (!sel) return;
+    try {
+      const r = await api('/api/stats/funnel/bom-dates' + qs(getFilters()));
+      const dates = r.dates || [];
+      const prev = sel.value;
+      sel.innerHTML = '<option value="">Todos los Ciclos B.O.M</option>' +
+        dates.map((d) => `<option value="${d.date}">B.O.M — ${formatBitDateLabel(d.date)} (${d.count})</option>`).join('');
+      if (prev && dates.some((d) => d.date === prev)) sel.value = prev;
+    } catch (e) { /* silent */ }
+  }
+
   async function loadGuests(query = '') {
     await prepareGuestsFilters();
+    await loadBomFilterOptions();
     const f = getFilters();
     const colorFilter = $('guests-color-filter') ? $('guests-color-filter').value : '';
     const stageFilter = $('guests-stage-filter') ? $('guests-stage-filter').value : '';
     const sysFilter   = $('guests-system-filter') ? $('guests-system-filter').value : '';
     const modFilter   = $('guests-module-filter') ? $('guests-module-filter').value : '';
+    const bomFilter   = $('guests-bom-filter') ? $('guests-bom-filter').value : '';
     // Defaults de filtros fecha: semana actual si los inputs están vacíos.
     const sf = $('guests-scan-from'), st = $('guests-scan-to');
     if (sf && st && !sf.value && !st.value) {
@@ -1810,7 +1921,7 @@
     // Filtro de módulo: el dropdown propio de la sección (si está) gana sobre el topbar.
     const effectiveModule = modFilter || f.module_id || undefined;
     const [data, wgList] = await Promise.all([
-      api('/api/guests' + qs({ ...f, q: query, color: colorFilter || undefined, stage: stageFilter || undefined, scan_from: scanFrom || undefined, scan_to: scanTo || undefined, system_id: sysFilter || undefined, module_id: effectiveModule, boleto_sub: boletoSub || undefined })),
+      api('/api/guests' + qs({ ...f, q: query, color: colorFilter || undefined, stage: stageFilter || undefined, scan_from: scanFrom || undefined, scan_to: scanTo || undefined, system_id: sysFilter || undefined, module_id: effectiveModule, boleto_sub: boletoSub || undefined, bom_date: bomFilter || undefined })),
       api('/api/wg/guests'),
     ]);
     const wgByGuest = {};
@@ -2043,7 +2154,7 @@
   // Listeners de filtros de la vista Invitados (color + fechas)
   document.addEventListener('change', (e) => {
     if (!e.target) return;
-    if (['guests-color-filter','guests-stage-filter','guests-boleto-filter','guests-scan-from','guests-scan-to','guests-system-filter','guests-module-filter'].includes(e.target.id)) {
+    if (['guests-color-filter','guests-stage-filter','guests-boleto-filter','guests-bom-filter','guests-scan-from','guests-scan-to','guests-system-filter','guests-module-filter'].includes(e.target.id)) {
       loadGuests($('guest-search').value);
     }
   });
@@ -2052,6 +2163,7 @@
     if (!e.target) return;
     if (e.target.id === 'funnel-mode' || e.target.id === 'funnel-from' || e.target.id === 'funnel-to') loadFunnel();
     if (e.target.id === 'funnel-bit-date') loadBitCycleMode();
+    if (e.target.id === 'funnel-bom-date') loadBomCycleMode();
   });
 
   document.addEventListener('click', async (e) => {

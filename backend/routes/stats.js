@@ -709,4 +709,82 @@ router.get('/funnel/bit-cycle', requireAuth, (req, res) => {
   res.json({ from, to, total, cohort, stage_counts: stageCounts, stage_pct: stagePct, stuck_counts: stuckCounts });
 });
 
+// Fechas B.O.M disponibles para el selector del embudo (Ciclo B.O.M).
+// Agrupa por bom_assigned_date (fecha del B.O.M al que quedó asignado el invitado
+// al registrarse), con el número de invitados asignados a cada una.
+router.get('/funnel/bom-dates', requireAuth, (req, res) => {
+  const { module_id } = req.query;
+  const scope = scopeUsersClause(req.user, 'u');
+
+  const extraFilters = [];
+  const extraParams = [];
+  if (module_id) {
+    const m = db.prepare('SELECT system_id FROM modules WHERE id = ?').get(module_id);
+    const allowed =
+      req.user.role === 'lider_supremo' ||
+      (req.user.role === 'system_leader' && m && m.system_id === req.user.system_id) ||
+      parseInt(module_id, 10) === req.user.module_id;
+    if (allowed) { extraFilters.push('u.module_id = ?'); extraParams.push(module_id); }
+  }
+  const extraSql = extraFilters.length ? ' AND ' + extraFilters.join(' AND ') : '';
+
+  const rows = db.prepare(`
+    SELECT g.bom_assigned_date AS date, COUNT(*) AS count
+    FROM guests g
+    JOIN users u ON u.id = g.distributor_id
+    WHERE g.bom_assigned_date IS NOT NULL
+      ${scope.sql} ${extraSql}
+    GROUP BY g.bom_assigned_date
+    ORDER BY g.bom_assigned_date DESC
+    LIMIT 60
+  `).all(...scope.params, ...extraParams);
+
+  res.json({ dates: rows });
+});
+
+// Ciclo B.O.M: invitados asignados a un B.O.M específico (bom_assigned_date en rango).
+// Book = todo invitado asignado a ese B.O.M. Show = el que efectivamente llegó a la
+// etapa BOM (o más allá, si ya avanzó en el embudo).
+router.get('/funnel/bom-cycle', requireAuth, (req, res) => {
+  const { from, to, module_id } = req.query;
+  if (!from || !to) return res.status(400).json({ error: 'from, to son obligatorios' });
+  const scope = scopeUsersClause(req.user, 'u');
+
+  const extraFilters = [];
+  const extraParams = [];
+  if (module_id) {
+    const m = db.prepare('SELECT system_id FROM modules WHERE id = ?').get(module_id);
+    const allowed =
+      req.user.role === 'lider_supremo' ||
+      (req.user.role === 'system_leader' && m && m.system_id === req.user.system_id) ||
+      parseInt(module_id, 10) === req.user.module_id;
+    if (allowed) { extraFilters.push('u.module_id = ?'); extraParams.push(module_id); }
+  }
+  const extraSql = extraFilters.length ? ' AND ' + extraFilters.join(' AND ') : '';
+
+  const guests = db.prepare(`
+    SELECT g.id, g.full_name, g.email, g.phone, g.current_stage, g.bom_assigned_date,
+           u.full_name AS distributor_name,
+           m.number AS module_number,
+           (SELECT MAX(scanned_at) FROM stage_history sh WHERE sh.guest_id = g.id) AS last_scan_at
+    FROM guests g
+    JOIN users u ON u.id = g.distributor_id
+    LEFT JOIN modules m ON m.id = u.module_id
+    WHERE g.bom_assigned_date IS NOT NULL
+      AND g.bom_assigned_date BETWEEN ? AND ?
+      ${scope.sql} ${extraSql}
+    ORDER BY g.bom_assigned_date DESC
+  `).all(from, to, ...scope.params, ...extraParams);
+
+  const STAGE_ORDER = { REGISTRO:0, BOM:1, BOLETO_PAGO:2, BOLETO_ABONADO:2, BOLETO_NO_PAGO:2, BOLETO_NO_INTERESADO:2, BIT:3, POWER_TALK:4, PLAN_TRABAJO:5, FIRMADO:6 };
+  const guestsOut = guests.map((g) => ({
+    ...g,
+    is_show: (STAGE_ORDER[g.current_stage] ?? 0) >= STAGE_ORDER.BOM,
+  }));
+  const books = guestsOut.length;
+  const shows = guestsOut.filter((g) => g.is_show).length;
+
+  res.json({ from, to, total: books, books, shows, guests: guestsOut });
+});
+
 module.exports = router;
