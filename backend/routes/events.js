@@ -2,7 +2,7 @@ const express = require('express');
 const db = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { STAGES, SCANNABLE_STAGES, nextStageAfterScan, STAGE_LABELS } = require('../utils/stages');
-const { eventHappensToday, dayOfWeekLabel, DAYS_ES, DAYS, getISOWeek, dayOfWeekKey, nextOccurrenceForWeeklyEvent } = require('../utils/calendar');
+const { eventHappensToday, dayOfWeekLabel, DAYS_ES, DAYS, getISOWeek, dayOfWeekKey, nextOccurrenceForWeeklyEvent, nextOccurrencesForWeeklyEvent } = require('../utils/calendar');
 const { localDate } = require('../utils/tz');
 const wg = require('../utils/wg');
 const colors = require('../utils/colors');
@@ -97,8 +97,12 @@ router.delete('/:id', requireAuth, requireRole('lider_supremo', 'system_leader')
   res.json({ ok: true });
 });
 
+// Etapas de boleto en las que el líder elige a cuál B.I.T próximo asistirá el invitado.
+const BIT_ASSIGNABLE_BOLETO_STAGES = ['BOLETO_PAGO', 'BOLETO_ABONADO', 'BOLETO_NO_PAGO'];
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 router.post('/scan', requireAuth, (req, res) => {
-  const { event_id, qr_token, amount } = req.body || {};
+  const { event_id, qr_token, amount, bit_assigned_date } = req.body || {};
   if (!event_id || !qr_token) return res.status(400).json({ error: 'event_id y qr_token requeridos' });
 
   const event = db.prepare('SELECT * FROM events WHERE id = ?').get(event_id);
@@ -147,11 +151,21 @@ router.post('/scan', requireAuth, (req, res) => {
   }
   // Monto solo aplica a BOLETO_ABONADO (sub-stage que requiere registrar valor).
   const finalAmount = (event.stage_target === 'BOLETO_ABONADO' && amount != null) ? parseFloat(amount) : null;
+
+  // B.I.T asignado: el líder elige a cuál de los próximos B.I.T asistirá el invitado
+  // al escanear un boleto (Pago/Abonado/No Pago). Se guarda en el registro del
+  // escaneo y también en el invitado (para el filtro Ciclo B.I.T del Embudo).
+  const finalBitAssignedDate = (BIT_ASSIGNABLE_BOLETO_STAGES.includes(event.stage_target)
+    && bit_assigned_date && ISO_DATE_RE.test(bit_assigned_date)) ? bit_assigned_date : null;
+  if (finalBitAssignedDate) {
+    db.prepare(`UPDATE guests SET bit_assigned_date = ? WHERE id = ?`).run(finalBitAssignedDate, guest.id);
+  }
+
   db.prepare(`
-    INSERT INTO stage_history (guest_id, from_stage, to_stage, scanned_by, notes, event_id, amount)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO stage_history (guest_id, from_stage, to_stage, scanned_by, notes, event_id, amount, bit_assigned_date)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(guest.id, guest.current_stage, advanced ? newStage : guest.current_stage,
-         req.user.id, `${advanced ? 'Avance' : 'Re-scan'} en evento: ${event.name}`, event.id, finalAmount);
+         req.user.id, `${advanced ? 'Avance' : 'Re-scan'} en evento: ${event.name}`, event.id, finalAmount, finalBitAssignedDate);
 
   // Asistencia WG: se registra si el evento es WG O si es Plan Trabajo (1-scan martes).
   let wgInfo = null;
@@ -193,6 +207,32 @@ router.post('/scan', requireAuth, (req, res) => {
     wg: wgInfo,
     color_changed: colorInfo,
   });
+});
+
+// Próximas 4 fechas del B.I.T activo (autenticado — lo consume el Scanner al
+// escanear un boleto, para que el líder elija a cuál asistirá el invitado).
+// Prioriza el B.I.T del sistema del actor; cae a un B.I.T global si no hay uno propio.
+router.get('/next-bit-dates', requireAuth, (req, res) => {
+  const systemId = req.user.system_id;
+  let ev;
+  if (systemId) {
+    ev = db.prepare(`
+      SELECT recurrence_days FROM events
+       WHERE stage_target = 'BIT' AND active = 1 AND recurrence_type = 'weekly'
+         AND (system_id = ? OR system_id IS NULL)
+       ORDER BY (system_id IS NULL) ASC, id ASC
+       LIMIT 1
+    `).get(systemId);
+  } else {
+    ev = db.prepare(`
+      SELECT recurrence_days FROM events
+       WHERE stage_target = 'BIT' AND active = 1 AND recurrence_type = 'weekly'
+       ORDER BY (system_id IS NULL) DESC, id ASC
+       LIMIT 1
+    `).get();
+  }
+  if (!ev || !ev.recurrence_days) return res.json({ dates: [] });
+  res.json({ dates: nextOccurrencesForWeeklyEvent(ev.recurrence_days, 4, new Date()) });
 });
 
 router.get('/scan/today-count', requireAuth, (req, res) => {

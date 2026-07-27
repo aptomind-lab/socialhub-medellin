@@ -915,13 +915,13 @@
       const stuck = data.stuck_counts || {};
       const total = data.total || 0;
 
-      // Barras de cohort: cuántos de los que llegaron a BIT continuaron.
+      // Barras de cohort: cuántos de los asignados a este B.I.T continuaron.
       const rangeTxt = range.from === range.to
-        ? `del B.I.T del ${formatBitDateLabel(range.from)}`
-        : `cuyo B.I.T ocurrió entre ${range.from} y ${range.to}`;
+        ? `al B.I.T del ${formatBitDateLabel(range.from)}`
+        : `cuyo B.I.T asignado cae entre ${range.from} y ${range.to}`;
       const cohortBars = `
         <div class="overline">Ciclo B.I.T · ${total} invitado(s)</div>
-        <div class="hint" style="margin-bottom:10px;">Cohorte: invitados ${rangeTxt}. Inactivo = 3 días hábiles sin escaneo y no firmado.</div>
+        <div class="hint" style="margin-bottom:10px;">Cohorte: invitados asignados ${rangeTxt}. Inactivo = 3 días hábiles sin escaneo y no firmado.</div>
         ${['BIT','POWER_TALK','PLAN_TRABAJO','FIRMADO'].map((s) => {
           const c = sc[s] || 0;
           const p = pct[s] || 0;

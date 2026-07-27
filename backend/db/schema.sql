@@ -71,6 +71,9 @@ CREATE TABLE IF NOT EXISTS guests (
   power_talk_date TEXT,
   signed_month    TEXT,
   bom_assigned_date TEXT,
+  -- Fecha del B.I.T al que el invitado se comprometió a asistir, elegida por el
+  -- líder al escanear Boleto Pago/Abonado/No Pago (ver /api/events/next-bit-dates).
+  bit_assigned_date TEXT,
   created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
   updated_at      TEXT    NOT NULL DEFAULT (datetime('now'))
 );
@@ -82,6 +85,7 @@ CREATE INDEX IF NOT EXISTS idx_guests_created      ON guests(created_at);
 CREATE INDEX IF NOT EXISTS idx_guests_color        ON guests(color);
 CREATE INDEX IF NOT EXISTS idx_guests_signed_month ON guests(signed_month);
 CREATE INDEX IF NOT EXISTS idx_guests_bom_date     ON guests(bom_assigned_date);
+CREATE INDEX IF NOT EXISTS idx_guests_bit_assigned ON guests(bit_assigned_date);
 
 CREATE TABLE IF NOT EXISTS stage_history (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -92,7 +96,8 @@ CREATE TABLE IF NOT EXISTS stage_history (
   scanned_at    TEXT    NOT NULL DEFAULT (datetime('now')),
   notes         TEXT,
   event_id      INTEGER REFERENCES events(id) ON DELETE SET NULL,
-  amount        REAL
+  amount        REAL,
+  bit_assigned_date TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_history_event ON stage_history(event_id);
 -- events.wg_session se agrega vía migración 014 si no existe

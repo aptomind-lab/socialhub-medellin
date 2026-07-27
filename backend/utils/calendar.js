@@ -72,6 +72,21 @@ function nextOccurrenceForWeeklyEvent(recurrenceDaysCsv, refDate = new Date()) {
   return null;
 }
 
+// Próximas N ocurrencias (>= refDate) de un evento weekly según su CSV de días.
+// Devuelve un array de fechas ISO 'YYYY-MM-DD' (puede tener menos de `count` si
+// no hay suficientes días configurados).
+function nextOccurrencesForWeeklyEvent(recurrenceDaysCsv, count = 4, refDate = new Date()) {
+  if (!recurrenceDaysCsv || count <= 0) return [];
+  const days = recurrenceDaysCsv.split(',').map((s) => s.trim().toLowerCase());
+  const results = [];
+  for (let i = 0; i < 7 * count && results.length < count; i++) {
+    const d = new Date(Date.UTC(refDate.getUTCFullYear(), refDate.getUTCMonth(), refDate.getUTCDate() + i));
+    const key = DAYS[d.getUTCDay()];
+    if (days.includes(key)) results.push(d.toISOString().slice(0, 10));
+  }
+  return results;
+}
+
 module.exports = {
   DAYS, DAYS_ES,
   dayOfWeekKey, dayOfWeekLabel,
@@ -79,4 +94,5 @@ module.exports = {
   areConsecutiveISOWeeks,
   eventHappensToday,
   nextOccurrenceForWeeklyEvent,
+  nextOccurrencesForWeeklyEvent,
 };

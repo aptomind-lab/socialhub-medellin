@@ -587,8 +587,8 @@ router.get('/funnel/guests', requireAuth, (req, res) => {
 });
 
 // Fechas B.I.T disponibles para el selector del embudo (Ciclo B.I.T).
-// Retorna cada fecha con el número de invitados que tuvieron su BIT ese día,
-// scoped por visibilidad del actor. Ordenado descendente. Acepta module_id opcional.
+// Agrupa por bit_assigned_date (fecha del B.I.T elegida por el líder al escanear
+// Boleto Pago/Abonado/No Pago), scoped por visibilidad del actor. Acepta module_id opcional.
 router.get('/funnel/bit-dates', requireAuth, (req, res) => {
   const { module_id } = req.query;
   const scope = scopeUsersClause(req.user, 'u');
@@ -606,21 +606,22 @@ router.get('/funnel/bit-dates', requireAuth, (req, res) => {
   const extraSql = extraFilters.length ? ' AND ' + extraFilters.join(' AND ') : '';
 
   const rows = db.prepare(`
-    SELECT g.bit_date AS date, COUNT(*) AS count
+    SELECT g.bit_assigned_date AS date, COUNT(*) AS count
     FROM guests g
     JOIN users u ON u.id = g.distributor_id
-    WHERE g.bit_date IS NOT NULL
+    WHERE g.bit_assigned_date IS NOT NULL
       ${scope.sql} ${extraSql}
-    GROUP BY g.bit_date
-    ORDER BY g.bit_date DESC
+    GROUP BY g.bit_assigned_date
+    ORDER BY g.bit_assigned_date DESC
     LIMIT 60
   `).all(...scope.params, ...extraParams);
 
   res.json({ dates: rows });
 });
 
-// Ciclo B.I.T: cohort de guests cuyo primer BIT cae en el rango. Para cada uno:
-//   - fechas clave (BIT/PT/PLAN_TRABAJO/FIRMADO)
+// Ciclo B.I.T: cohort de guests asignados a un B.I.T cuya fecha cae en el rango
+// (bit_assigned_date, elegida al escanear el boleto). Para cada uno:
+//   - si asistió realmente (bit_date) y las fechas clave posteriores (PT/PLAN_TRABAJO/FIRMADO)
 //   - último escaneo y si está inactivo (3 días hábiles sin scan, no firmado)
 //   - etapa en la que se inactivaron (la más alta alcanzada)
 router.get('/funnel/bit-cycle', requireAuth, (req, res) => {
@@ -644,7 +645,7 @@ router.get('/funnel/bit-cycle', requireAuth, (req, res) => {
 
   const guests = db.prepare(`
     SELECT g.id, g.full_name, g.email, g.phone, g.current_stage,
-           g.bit_date, g.power_talk_date, g.signed_at,
+           g.bit_assigned_date, g.bit_date, g.power_talk_date, g.signed_at,
            u.full_name AS distributor_name,
            m.number AS module_number,
            (SELECT MAX(scanned_at) FROM stage_history sh WHERE sh.guest_id = g.id) AS last_scan_at,
@@ -653,10 +654,10 @@ router.get('/funnel/bit-cycle', requireAuth, (req, res) => {
     FROM guests g
     JOIN users u ON u.id = g.distributor_id
     LEFT JOIN modules m ON m.id = u.module_id
-    WHERE g.bit_date IS NOT NULL
-      AND g.bit_date BETWEEN ? AND ?
+    WHERE g.bit_assigned_date IS NOT NULL
+      AND g.bit_assigned_date BETWEEN ? AND ?
       ${scope.sql} ${extraSql}
-    ORDER BY g.bit_date DESC
+    ORDER BY g.bit_assigned_date DESC
   `).all(from, to, ...scope.params, ...extraParams);
 
   // 3 días hábiles desde hoy (Colombia local). Lun-Vie.
@@ -687,10 +688,13 @@ router.get('/funnel/bit-cycle', requireAuth, (req, res) => {
     };
   });
 
-  // Conteos por etapa dentro del cohort (porcentaje sobre total cohort).
+  // Conteos por etapa dentro del cohort (porcentaje sobre total cohort asignado).
+  // BIT ya no es 100% del cohort: el cohort ahora es "asignados", así que BIT
+  // refleja cuántos de esos asignados realmente asistieron (bit_date set).
   const total = cohort.length;
-  const stageCounts = { BIT: total, POWER_TALK: 0, PLAN_TRABAJO: 0, FIRMADO: 0, INACTIVE: 0 };
+  const stageCounts = { BIT: 0, POWER_TALK: 0, PLAN_TRABAJO: 0, FIRMADO: 0, INACTIVE: 0 };
   cohort.forEach((g) => {
+    if (g.bit_date) stageCounts.BIT++;
     if (g.power_talk_date) stageCounts.POWER_TALK++;
     if (g.plan_trabajo_date) stageCounts.PLAN_TRABAJO++;
     if (g.signed_at) stageCounts.FIRMADO++;

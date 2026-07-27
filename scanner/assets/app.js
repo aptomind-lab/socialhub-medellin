@@ -175,16 +175,27 @@
   });
 
   // -------- PROCESS --------
+  const BIT_ASSIGNABLE_BOLETO_STAGES = ['BOLETO_PAGO', 'BOLETO_ABONADO', 'BOLETO_NO_PAGO'];
+
   async function processScan(text) {
     const eventId = $('event-select').value;
     if (!eventId) { alert('Selecciona un evento primero'); return; }
     const tokenStr = String(text).trim().split('/').pop();
 
-    // BOLETO_ABONADO: pedir monto antes de enviar el scan (modal dedicado,
-    // prompt() no es confiable en PWA / iOS Safari mientras la cámara está activa).
     const sel = $('event-select');
     const opt = sel.options[sel.selectedIndex];
     const stage = opt ? opt.dataset.stage : '';
+
+    // Boleto Pago/Abonado/No Pago: el líder elige a cuál de los próximos B.I.T
+    // asistirá el invitado, antes de enviar el scan.
+    let bitAssignedDate = null;
+    if (BIT_ASSIGNABLE_BOLETO_STAGES.includes(stage)) {
+      bitAssignedDate = await askBitDate(tokenStr);
+      if (bitAssignedDate === null) return; // canceló
+    }
+
+    // BOLETO_ABONADO: pedir monto antes de enviar el scan (modal dedicado,
+    // prompt() no es confiable en PWA / iOS Safari mientras la cámara está activa).
     let amount = null;
     if (stage === 'BOLETO_ABONADO') {
       amount = await askAmount(tokenStr);
@@ -194,7 +205,7 @@
     try {
       const result = await api('/api/events/scan', {
         method: 'POST',
-        body: JSON.stringify({ event_id: parseInt(eventId, 10), qr_token: tokenStr, amount }),
+        body: JSON.stringify({ event_id: parseInt(eventId, 10), qr_token: tokenStr, amount, bit_assigned_date: bitAssignedDate }),
       });
       showConfirm(result);
       await refreshCount();
@@ -244,6 +255,51 @@
     });
   }
 
+  function formatBitDateOption(iso) {
+    const d = new Date(iso + 'T00:00:00Z');
+    const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+    const monthShort = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+    return `${dayNames[d.getUTCDay()]} ${String(d.getUTCDate()).padStart(2, '0')} ${monthShort[d.getUTCMonth()]}`;
+  }
+
+  // Modal para elegir a cuál de los próximos B.I.T asistirá el invitado
+  // (Boleto Pago/Abonado/No Pago). Resuelve con la fecha ISO o null si canceló.
+  async function askBitDate(tokenStr) {
+    let dates = [];
+    try {
+      const r = await api('/api/events/next-bit-dates');
+      dates = r.dates || [];
+    } catch (e) {
+      alert('No se pudo cargar las próximas fechas de B.I.T: ' + e.message);
+      return null;
+    }
+    if (!dates.length) {
+      alert('No hay un B.I.T activo configurado. No se puede asignar fecha.');
+      return null;
+    }
+    return new Promise((resolve) => {
+      const modal  = $('bitdate-modal');
+      const select = $('bitdate-select');
+      const ok     = $('bitdate-confirm');
+      const cancel = $('bitdate-cancel');
+      const nameEl = $('bitdate-guest-name');
+      nameEl.textContent = tokenStr ? `QR ...${String(tokenStr).slice(-6)}` : '';
+      select.innerHTML = dates.map((d) => `<option value="${d}">${formatBitDateOption(d)} — ${d}</option>`).join('');
+      modal.hidden = false;
+
+      const cleanup = () => {
+        ok.removeEventListener('click', onOk);
+        cancel.removeEventListener('click', onCancel);
+        modal.hidden = true;
+      };
+      const onOk = () => { const v = select.value; cleanup(); resolve(v || null); };
+      const onCancel = () => { cleanup(); resolve(null); };
+
+      ok.addEventListener('click', onOk);
+      cancel.addEventListener('click', onCancel);
+    });
+  }
+
   function showConfirm(result) {
     $('confirm-modal').hidden = false;
 
@@ -268,6 +324,14 @@
     $('m-module').textContent = result.guest.module_number ? `Módulo ${result.guest.module_number}` : '—';
     $('m-prev').textContent = stageLabels[result.previous_stage] || result.previous_stage;
     $('m-new').textContent = stageLabels[result.new_stage] || result.new_stage;
+
+    // Fila B.I.T asignado (solo si el scan guardó una fecha, ej. Boleto Pago/Abonado/No Pago)
+    if (result.guest.bit_assigned_date) {
+      $('m-bitdate-row').hidden = false;
+      $('m-bitdate').textContent = formatBitDateOption(result.guest.bit_assigned_date);
+    } else {
+      $('m-bitdate-row').hidden = true;
+    }
 
     // Bloque WG
     if (isWG) {
@@ -298,6 +362,7 @@
     $('m-module').textContent = '—';
     $('m-prev').textContent = '—';
     $('m-new').textContent = '—';
+    $('m-bitdate-row').hidden = true;
   }
 
   $('modal-close').addEventListener('click', () => {

@@ -84,6 +84,7 @@
       <div class="modal-row"><span class="lbl">Módulo</span><span id="m-module"></span></div>
       <div class="modal-row"><span class="lbl">Etapa anterior</span><span id="m-prev"></span></div>
       <div class="modal-row"><span class="lbl">Etapa actual</span><span id="m-new" class="gold"></span></div>
+      <div class="modal-row" id="m-bitdate-row" hidden><span class="lbl">B.I.T asignado</span><span id="m-bitdate" class="gold"></span></div>
       <div id="m-wg-block" hidden>
         <div class="wg-divider">Working Group</div>
         <div class="modal-row"><span class="lbl">Día</span><span id="m-wg-day" class="gold"></span></div>
@@ -111,6 +112,22 @@
       <div style="display:flex;gap:10px;">
         <button id="amount-cancel" class="ghost-btn" style="flex:1;">Cancelar</button>
         <button id="amount-confirm" class="primary" style="flex:1;">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal para elegir a cuál B.I.T próximo asistirá el invitado (Boleto Pago/Abonado/No Pago) -->
+  <div id="bitdate-modal" class="modal" hidden>
+    <div class="modal-card">
+      <h2>¿A cuál B.I.T asistirá?</h2>
+      <div id="bitdate-guest-name" class="modal-row" style="justify-content:center;font-weight:600;margin:6px 0 14px;"></div>
+      <div class="field" style="margin-bottom:18px;">
+        <label for="bitdate-select">Próximos B.I.T</label>
+        <select id="bitdate-select"></select>
+      </div>
+      <div style="display:flex;gap:10px;">
+        <button id="bitdate-cancel" class="ghost-btn" style="flex:1;">Cancelar</button>
+        <button id="bitdate-confirm" class="primary" style="flex:1;">Confirmar</button>
       </div>
     </div>
   </div>
