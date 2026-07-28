@@ -53,6 +53,16 @@ function monthlyEndFrom(startIso) {
   return `${nextY}-${String(nextM).padStart(2, '0')}-04`;
 }
 
+// ¿Puede `actor` gestionar (crear/editar/borrar) un registro de BV de un usuario
+// cuyo system_id es `targetSystemId`? lider_supremo: cualquiera. system_leader:
+// solo su propio sistema. Resto: sin permiso de gestión (solo su propio registro,
+// vía el flujo normal de POST / sin user_id).
+function canManagePromotions(actor, targetSystemId) {
+  if (actor.role === 'lider_supremo') return true;
+  if (actor.role === 'system_leader') return targetSystemId === actor.system_id;
+  return false;
+}
+
 // Devuelve el ciclo vigente para hoy. Si el último ciclo ya venció, auto-crea
 // el siguiente (start = último.end + 1 día, end = día 4 del mes siguiente),
 // avanzando cuantas veces sea necesario si hubo un gap grande.
@@ -110,14 +120,26 @@ router.get('/', requireAuth, (req, res) => {
   res.json({ cycle, top, my });
 });
 
-// POST /api/promotions — registrar BV/orden/fecha para el usuario autenticado.
+// POST /api/promotions — registrar BV/orden/fecha. Por defecto para el usuario
+// autenticado; si se envía user_id de otro usuario, requiere que el actor sea
+// system_leader (mismo sistema) o lider_supremo.
 router.post('/', requireAuth, (req, res) => {
-  const { bv_personal, order_number, date } = req.body || {};
+  const { bv_personal, order_number, date, user_id } = req.body || {};
   const bv = parseInt(bv_personal, 10);
   if (!Number.isFinite(bv) || bv < 0) return res.status(400).json({ error: 'BV Personal inválido' });
   const order = String(order_number || '').trim();
   if (!order) return res.status(400).json({ error: '# de Orden requerido' });
   if (!date) return res.status(400).json({ error: 'Fecha requerida' });
+
+  let targetUserId = req.user.id;
+  if (user_id != null && parseInt(user_id, 10) !== req.user.id) {
+    const target = db.prepare('SELECT id, system_id FROM users WHERE id = ?').get(parseInt(user_id, 10));
+    if (!target) return res.status(404).json({ error: 'Usuario no encontrado' });
+    if (!canManagePromotions(req.user, target.system_id)) {
+      return res.status(403).json({ error: 'No tienes permiso para registrar BV a nombre de este usuario' });
+    }
+    targetUserId = target.id;
+  }
 
   const cycle = getCurrentCycle();
   if (!cycle) return res.status(500).json({ error: 'No hay ciclo vigente' });
@@ -128,7 +150,7 @@ router.post('/', requireAuth, (req, res) => {
   const info = db.prepare(`
     INSERT INTO promotions (user_id, cycle_id, bv_personal, order_number, date)
     VALUES (?, ?, ?, ?, ?)
-  `).run(req.user.id, cycle.id, bv, order, date);
+  `).run(targetUserId, cycle.id, bv, order, date);
 
   res.status(201).json({
     id: info.lastInsertRowid,
@@ -145,7 +167,7 @@ router.get('/user/:userId', requireAuth, (req, res) => {
   const userId = parseInt(req.params.userId, 10);
   if (!userId) return res.status(400).json({ error: 'userId inválido' });
 
-  const user = db.prepare('SELECT id, full_name FROM users WHERE id = ?').get(userId);
+  const user = db.prepare('SELECT id, full_name, system_id FROM users WHERE id = ?').get(userId);
   if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
 
   const cycle = getCurrentCycle();
@@ -177,6 +199,64 @@ router.patch('/cycle', requireAuth, (req, res) => {
   }
   db.prepare('UPDATE promotion_cycles SET end_date = ? WHERE id = ?').run(end_date, cycle.id);
   res.json({ ok: true, cycle: db.prepare('SELECT * FROM promotion_cycles WHERE id = ?').get(cycle.id) });
+});
+
+// PATCH /api/promotions/:id — editar bv_personal/order_number/date de un registro.
+// Solo system_leader (mismo sistema del dueño del registro) o lider_supremo.
+router.patch('/:id', requireAuth, (req, res) => {
+  const record = db.prepare(`
+    SELECT p.*, u.system_id AS user_system_id
+    FROM promotions p JOIN users u ON u.id = p.user_id
+    WHERE p.id = ?
+  `).get(req.params.id);
+  if (!record) return res.status(404).json({ error: 'Registro no encontrado' });
+  if (!canManagePromotions(req.user, record.user_system_id)) {
+    return res.status(403).json({ error: 'No tienes permiso para editar este registro' });
+  }
+
+  const { bv_personal, order_number, date } = req.body || {};
+  const fields = [], values = [];
+  if (bv_personal !== undefined) {
+    const bv = parseInt(bv_personal, 10);
+    if (!Number.isFinite(bv) || bv < 0) return res.status(400).json({ error: 'BV Personal inválido' });
+    fields.push('bv_personal = ?'); values.push(bv);
+  }
+  if (order_number !== undefined) {
+    const order = String(order_number).trim();
+    if (!order) return res.status(400).json({ error: '# de Orden requerido' });
+    fields.push('order_number = ?'); values.push(order);
+  }
+  if (date !== undefined) {
+    const cycle = db.prepare('SELECT * FROM promotion_cycles WHERE id = ?').get(record.cycle_id);
+    if (cycle && (date < cycle.start_date || date > cycle.end_date)) {
+      return res.status(400).json({ error: `La fecha debe estar entre ${cycle.start_date} y ${cycle.end_date}` });
+    }
+    fields.push('date = ?'); values.push(date);
+  }
+  if (!fields.length) return res.status(400).json({ error: 'Sin campos para actualizar' });
+
+  values.push(req.params.id);
+  db.prepare(`UPDATE promotions SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+  res.json({
+    ok: true,
+    record: db.prepare('SELECT id, user_id, bv_personal, order_number, date, created_at FROM promotions WHERE id = ?').get(req.params.id),
+  });
+});
+
+// DELETE /api/promotions/:id — eliminar un registro de BV.
+// Solo system_leader (mismo sistema del dueño del registro) o lider_supremo.
+router.delete('/:id', requireAuth, (req, res) => {
+  const record = db.prepare(`
+    SELECT p.id, u.system_id AS user_system_id
+    FROM promotions p JOIN users u ON u.id = p.user_id
+    WHERE p.id = ?
+  `).get(req.params.id);
+  if (!record) return res.status(404).json({ error: 'Registro no encontrado' });
+  if (!canManagePromotions(req.user, record.user_system_id)) {
+    return res.status(403).json({ error: 'No tienes permiso para eliminar este registro' });
+  }
+  db.prepare('DELETE FROM promotions WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
 });
 
 module.exports = router;

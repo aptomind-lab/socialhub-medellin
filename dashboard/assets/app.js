@@ -252,35 +252,132 @@
     } catch (err) { handleErr(err); }
   }
 
+  // lider_supremo: gestiona cualquier usuario. system_leader: solo los de su propio sistema.
+  function canManagePromoRecords(userSystemId) {
+    if (me.role === 'lider_supremo') return true;
+    if (me.role === 'system_leader') return userSystemId === me.system_id;
+    return false;
+  }
+
   async function openPromoHistoryModal(userId, userName) {
     openModal(`Historial · ${userName}`, '<div class="muted">Cargando…</div>');
     try {
       const r = await api(`/api/promotions/user/${userId}`);
-      if (!r.records || !r.records.length) {
-        $('modal-body').innerHTML = `<div class="modal-body"><div class="muted">Sin registros en este ciclo.</div></div>`;
-        return;
-      }
-      const rowsHtml = r.records.map((rec) => `
+      const canManage = canManagePromoRecords(r.user?.system_id);
+      const cycleFrom = r.cycle?.start_date || '';
+      const cycleTo = r.cycle?.end_date || '';
+
+      const addFormHtml = canManage ? `
+        <form id="promo-add-form" class="form-row form-row--quad" style="margin-bottom:16px;">
+          <div class="field"><label>BV Personal</label><input type="number" min="0" id="pa-bv" required placeholder="0" /></div>
+          <div class="field"><label># de Orden</label><input type="text" id="pa-order" required placeholder="Ej. 12345" /></div>
+          <div class="field"><label>Fecha</label><input type="date" id="pa-date" min="${cycleFrom}" max="${cycleTo}" required /></div>
+          <button class="primary sm" type="submit">Agregar</button>
+        </form>
+      ` : '';
+
+      const summaryHtml = r.cycle ? `
+        <div style="margin-bottom:12px;">
+          <div class="muted" style="font-size:12px;">Ciclo ${cycleFrom} → ${cycleTo}</div>
+          <div style="margin-top:4px;">Total BV: <strong style="color:var(--gold-400);">${r.total}</strong> · ${r.records.length} orden(es)</div>
+        </div>` : '';
+
+      const rowsHtml = (r.records || []).map((rec) => `
         <tr>
           <td>${rec.date}</td>
           <td>${rec.order_number}</td>
           <td><strong style="color:var(--gold-400);">${rec.bv_personal}</strong></td>
           <td class="muted" style="font-size:11px;">${fmtLocal(rec.created_at)}</td>
+          ${canManage ? `<td style="white-space:nowrap;">
+            <button class="ghost-btn sm" data-action="edit-promo" data-id="${rec.id}">Editar</button>
+            <button class="ghost-btn sm" style="margin-left:6px;color:#FF8B95;border-color:rgba(220,90,100,0.3);" data-action="delete-promo" data-id="${rec.id}">Eliminar</button>
+          </td>` : ''}
         </tr>
       `).join('');
+
+      const tableHtml = (r.records && r.records.length)
+        ? `<div class="table-wrap"><table class="table">
+            <thead><tr><th>Fecha</th><th># Orden</th><th>BV</th><th>Registrado</th>${canManage ? '<th></th>' : ''}</tr></thead>
+            <tbody>${rowsHtml}</tbody>
+          </table></div>`
+        : '<div class="muted">Sin registros en este ciclo.</div>';
+
       $('modal-body').innerHTML = `<div class="modal-body" style="max-height:70vh;overflow:auto;">
-        <div style="margin-bottom:12px;">
-          <div class="muted" style="font-size:12px;">Ciclo ${r.cycle?.start_date} → ${r.cycle?.end_date}</div>
-          <div style="margin-top:4px;">Total BV: <strong style="color:var(--gold-400);">${r.total}</strong> · ${r.records.length} orden(es)</div>
-        </div>
-        <div class="table-wrap"><table class="table">
-          <thead><tr><th>Fecha</th><th># Orden</th><th>BV</th><th>Registrado</th></tr></thead>
-          <tbody>${rowsHtml}</tbody>
-        </table></div>
+        ${addFormHtml}${summaryHtml}${tableHtml}
       </div>`;
+
+      if (canManage) {
+        const addForm = $('promo-add-form');
+        if (addForm) {
+          const dateInput = $('pa-date');
+          if (dateInput && r.cycle) {
+            const todayCO = new Date(Date.now() - 5 * 3600 * 1000).toISOString().slice(0, 10);
+            dateInput.value = todayCO < cycleFrom ? cycleFrom : (todayCO > cycleTo ? cycleTo : todayCO);
+          }
+          addForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            try {
+              await api('/api/promotions', {
+                method: 'POST',
+                body: JSON.stringify({
+                  user_id: userId,
+                  bv_personal: parseInt($('pa-bv').value, 10) || 0,
+                  order_number: $('pa-order').value.trim(),
+                  date: $('pa-date').value,
+                }),
+              });
+              openPromoHistoryModal(userId, userName);
+              loadPromotions();
+            } catch (err) { alert(err.message); }
+          });
+        }
+        $('modal-body').querySelectorAll('[data-action=edit-promo]').forEach((b) => {
+          b.addEventListener('click', () => {
+            const rec = r.records.find((x) => String(x.id) === b.dataset.id);
+            openPromoRecordEditor(rec, userId, userName);
+          });
+        });
+        $('modal-body').querySelectorAll('[data-action=delete-promo]').forEach((b) => {
+          b.addEventListener('click', async () => {
+            if (!confirm('¿Eliminar este registro de BV?')) return;
+            try {
+              await api(`/api/promotions/${b.dataset.id}`, { method: 'DELETE' });
+              openPromoHistoryModal(userId, userName);
+              loadPromotions();
+            } catch (err) { alert(err.message); }
+          });
+        });
+      }
     } catch (err) {
       $('modal-body').innerHTML = `<div class="modal-body"><div class="error">${err.message}</div></div>`;
     }
+  }
+
+  function openPromoRecordEditor(rec, userId, userName) {
+    openModal('Editar registro BV', `
+      <div class="field"><label>BV Personal</label><input type="number" min="0" id="pe-bv" value="${rec.bv_personal}" required /></div>
+      <div class="field"><label># de Orden</label><input type="text" id="pe-order" value="${String(rec.order_number).replace(/"/g, '&quot;')}" required /></div>
+      <div class="field"><label>Fecha</label><input type="date" id="pe-date" value="${rec.date}" required /></div>
+      <div style="display:flex;gap:10px;margin-top:14px;">
+        <button class="ghost-btn" id="promo-edit-cancel" style="flex:1;">Cancelar</button>
+        <button class="primary" id="promo-edit-save" style="flex:1;">Guardar cambios</button>
+      </div>
+    `);
+    $('promo-edit-cancel').addEventListener('click', () => openPromoHistoryModal(userId, userName));
+    $('promo-edit-save').addEventListener('click', async () => {
+      try {
+        await api(`/api/promotions/${rec.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            bv_personal: parseInt($('pe-bv').value, 10),
+            order_number: $('pe-order').value.trim(),
+            date: $('pe-date').value,
+          }),
+        });
+        openPromoHistoryModal(userId, userName);
+        loadPromotions();
+      } catch (err) { alert(err.message); }
+    });
   }
 
   if ($('promo-form')) {
