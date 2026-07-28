@@ -49,13 +49,26 @@ router.post('/register', registerLimiter, async (req, res) => {
     });
   }
 
-  // Próximo B.O.M activo — se asigna automáticamente al invitado.
+  // Próximo B.O.M activo — se asigna automáticamente al invitado. Prioriza el
+  // B.O.M del sistema del contactador (igual que /api/events/next-bom-public);
+  // cae a un B.O.M global si no hay uno propio. Sin scope, un B.O.M mal
+  // configurado en otro sistema podía asignarse a cualquier invitado.
   let bomDate = null;
   try {
-    const bomEv = db.prepare(`
-      SELECT recurrence_days FROM events
-       WHERE stage_target = 'BOM' AND active = 1 AND recurrence_type = 'weekly' LIMIT 1
-    `).get();
+    const bomEv = contactor.system_id
+      ? db.prepare(`
+          SELECT recurrence_days FROM events
+           WHERE stage_target = 'BOM' AND active = 1 AND recurrence_type = 'weekly'
+             AND (system_id = ? OR system_id IS NULL)
+           ORDER BY (system_id IS NULL) ASC, id ASC
+           LIMIT 1
+        `).get(contactor.system_id)
+      : db.prepare(`
+          SELECT recurrence_days FROM events
+           WHERE stage_target = 'BOM' AND active = 1 AND recurrence_type = 'weekly'
+           ORDER BY (system_id IS NULL) DESC, id ASC
+           LIMIT 1
+        `).get();
     if (bomEv && bomEv.recurrence_days) bomDate = nextOccurrenceForWeeklyEvent(bomEv.recurrence_days);
   } catch (e) { /* sin BOM configurado, OK */ }
 

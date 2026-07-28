@@ -22,6 +22,25 @@ function buildWeekRange(weekOffset = 0) {
   return { from: monday.toISOString().slice(0, 10), to: sunday.toISOString().slice(0, 10) };
 }
 
+// Fragmento SQL defensivo: solo deja pasar bom_assigned_date cuyo día de la semana
+// coincide con la recurrencia real del/los evento(s) B.O.M activos (unión de todos
+// los sistemas). Filtra fechas heredadas/corruptas que no caen en un día real de B.O.M.
+const BOM_DAY_NUM = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6 };
+function bomWeekdayFilterSql(alias = 'g') {
+  const bomEvents = db.prepare(`
+    SELECT recurrence_days FROM events
+     WHERE stage_target = 'BOM' AND active = 1 AND recurrence_type = 'weekly' AND recurrence_days IS NOT NULL
+  `).all();
+  const days = new Set();
+  bomEvents.forEach((ev) => {
+    ev.recurrence_days.split(',').map((s) => s.trim().toLowerCase()).forEach((d) => {
+      if (BOM_DAY_NUM[d] !== undefined) days.add(BOM_DAY_NUM[d]);
+    });
+  });
+  if (!days.size) return ' AND 0=1'; // sin B.O.M activo configurado → ninguna fecha es válida
+  return ` AND CAST(strftime('%w', ${alias}.bom_assigned_date) AS INTEGER) IN (${[...days].join(',')})`;
+}
+
 // ================= KPIs PRINCIPALES =================
 router.get('/kpis', requireAuth, (req, res) => {
   const { module_id, system_id, month } = req.query;
@@ -737,6 +756,7 @@ router.get('/funnel/bom-dates', requireAuth, (req, res) => {
     FROM guests g
     JOIN users u ON u.id = g.distributor_id
     WHERE g.bom_assigned_date IS NOT NULL
+      ${bomWeekdayFilterSql('g')}
       ${scope.sql} ${extraSql}
     GROUP BY g.bom_assigned_date
     ORDER BY g.bom_assigned_date DESC
@@ -776,6 +796,7 @@ router.get('/funnel/bom-cycle', requireAuth, (req, res) => {
     LEFT JOIN modules m ON m.id = u.module_id
     WHERE g.bom_assigned_date IS NOT NULL
       AND g.bom_assigned_date BETWEEN ? AND ?
+      ${bomWeekdayFilterSql('g')}
       ${scope.sql} ${extraSql}
     ORDER BY g.bom_assigned_date DESC
   `).all(from, to, ...scope.params, ...extraParams);
