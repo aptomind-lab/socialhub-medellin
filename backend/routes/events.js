@@ -142,6 +142,13 @@ router.post('/scan', requireAuth, (req, res) => {
       .run(newStage, guest.id);
     // Sellar fechas clave al alcanzar cada hito por primera vez (hora local Colombia)
     const today = localDate();
+    // BOM: reemplaza la fecha prospectiva (asignada al registrarse) por la fecha
+    // real de asistencia. Si el invitado no asistió al B.O.M originalmente asignado
+    // y llega a uno posterior, queda correctamente atribuido a ese ("Show" real).
+    // El scan a BOM solo ocurre una vez por invitado (bloqueado por alreadyRegistered).
+    if (newStage === 'BOM') {
+      db.prepare(`UPDATE guests SET bom_assigned_date = ? WHERE id = ?`).run(today, guest.id);
+    }
     if (newStage === 'BIT' && !guest.bit_date) {
       db.prepare(`UPDATE guests SET bit_date = ? WHERE id = ?`).run(today, guest.id);
     }

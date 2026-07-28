@@ -606,8 +606,10 @@ router.get('/funnel/guests', requireAuth, (req, res) => {
 });
 
 // Fechas B.I.T disponibles para el selector del embudo (Ciclo B.I.T).
-// Agrupa por bit_assigned_date (fecha del B.I.T elegida por el líder al escanear
-// Boleto Pago/Abonado/No Pago), scoped por visibilidad del actor. Acepta module_id opcional.
+// Agrupa por COALESCE(bit_assigned_date, bit_date): usa la fecha asignada al
+// escanear el boleto si existe (flujo nuevo); si no, cae a la fecha real de
+// asistencia (bit_date) para no perder los registros históricos que nunca
+// pasaron por el flujo de asignación. Scoped por visibilidad del actor.
 router.get('/funnel/bit-dates', requireAuth, (req, res) => {
   const { module_id } = req.query;
   const scope = scopeUsersClause(req.user, 'u');
@@ -625,13 +627,13 @@ router.get('/funnel/bit-dates', requireAuth, (req, res) => {
   const extraSql = extraFilters.length ? ' AND ' + extraFilters.join(' AND ') : '';
 
   const rows = db.prepare(`
-    SELECT g.bit_assigned_date AS date, COUNT(*) AS count
+    SELECT COALESCE(g.bit_assigned_date, g.bit_date) AS date, COUNT(*) AS count
     FROM guests g
     JOIN users u ON u.id = g.distributor_id
-    WHERE g.bit_assigned_date IS NOT NULL
+    WHERE COALESCE(g.bit_assigned_date, g.bit_date) IS NOT NULL
       ${scope.sql} ${extraSql}
-    GROUP BY g.bit_assigned_date
-    ORDER BY g.bit_assigned_date DESC
+    GROUP BY COALESCE(g.bit_assigned_date, g.bit_date)
+    ORDER BY COALESCE(g.bit_assigned_date, g.bit_date) DESC
     LIMIT 60
   `).all(...scope.params, ...extraParams);
 
@@ -673,10 +675,10 @@ router.get('/funnel/bit-cycle', requireAuth, (req, res) => {
     FROM guests g
     JOIN users u ON u.id = g.distributor_id
     LEFT JOIN modules m ON m.id = u.module_id
-    WHERE g.bit_assigned_date IS NOT NULL
-      AND g.bit_assigned_date BETWEEN ? AND ?
+    WHERE COALESCE(g.bit_assigned_date, g.bit_date) IS NOT NULL
+      AND COALESCE(g.bit_assigned_date, g.bit_date) BETWEEN ? AND ?
       ${scope.sql} ${extraSql}
-    ORDER BY g.bit_assigned_date DESC
+    ORDER BY COALESCE(g.bit_assigned_date, g.bit_date) DESC
   `).all(from, to, ...scope.params, ...extraParams);
 
   // 3 días hábiles desde hoy (Colombia local). Lun-Vie.
