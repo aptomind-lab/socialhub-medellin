@@ -96,12 +96,20 @@ router.post('/register', registerLimiter, async (req, res) => {
     qrDataUrl = await generateQrDataUrl(qrPayload);
   }
 
+  // Módulo del contactador (el invitado hereda su módulo) — se muestra en el
+  // pase de entrada del landing. Null si el contactador no tiene módulo propio
+  // (ej. lider_supremo / system_leader).
+  const contactorModule = contactor.module_id
+    ? db.prepare('SELECT number FROM modules WHERE id = ?').get(contactor.module_id)
+    : null;
+
   // Respondemos YA — sin esperar al SMTP. Si email falla/timea no afecta UX del registro.
   res.status(201).json({
     ok: true,
     guest_id: info.lastInsertRowid,
     qr_data_url: qrDataUrl,
     email_sent: 'pending', // el cliente sabe que el envío va aparte
+    module_number: contactorModule ? contactorModule.number : null,
   });
 
   // Fire-and-forget: enviamos el email después de responder.

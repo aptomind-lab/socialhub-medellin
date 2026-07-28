@@ -7,6 +7,8 @@
   const successPanel = document.getElementById('success');
   const qrImg = document.getElementById('qr-img');
   const qrDownload = document.getElementById('qr-download');
+  const moduleBadge = document.getElementById('module-badge');
+  const moduleNumberEl = document.getElementById('module-number');
   document.getElementById('year').textContent = new Date().getFullYear();
 
   // ── Pre-fill del código si viene en la URL: ?ref=CODIGO ──
@@ -82,6 +84,12 @@
 
       qrImg.src = json.qr_data_url;
       qrDownload.href = json.qr_data_url;
+      if (json.module_number) {
+        moduleNumberEl.textContent = json.module_number;
+        moduleBadge.hidden = false;
+      } else {
+        moduleBadge.hidden = true;
+      }
       successPanel.hidden = false;
     } catch (err) {
       showError(err.message);
