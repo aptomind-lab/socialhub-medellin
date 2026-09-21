@@ -33,7 +33,14 @@
     const text = await resp.text();
     let data = {};
     try { data = text ? JSON.parse(text) : {}; } catch (e) {}
-    if (!resp.ok) throw new Error(data.error || `Error ${resp.status}`);
+    if (!resp.ok) {
+      // Se adjuntan status y cuerpo para que quien llama pueda reaccionar a
+      // respuestas con semántica propia (ej. 409 duplicate en promociones).
+      const err = new Error(data.error || `Error ${resp.status}`);
+      err.status = resp.status;
+      err.data = data;
+      throw err;
+    }
     return data;
   }
 
@@ -199,11 +206,13 @@
       const data = await api('/api/promotions');
       const cycleEl = $('promo-cycle-range');
       if (!data.cycle) {
-        if (cycleEl) cycleEl.textContent = 'Sin ciclo vigente';
-        $('promo-top').innerHTML = '<tr><td colspan="6" class="muted">Sin ciclo vigente.</td></tr>';
+        if (cycleEl) cycleEl.textContent = 'Sin promoción vigente';
+        $('promo-top').innerHTML = '<tr><td colspan="7" class="muted">Sin promoción vigente.</td></tr>';
         return;
       }
-      if (cycleEl) cycleEl.textContent = `Ciclo: ${data.cycle.start_date} → ${data.cycle.end_date}`;
+      if (cycleEl) cycleEl.textContent = `Periodo: ${data.cycle.start_date} → ${data.cycle.end_date}`;
+      const nameEl = $('promo-name');
+      if (nameEl && data.cycle.name) nameEl.textContent = data.cycle.name;
       const dateInput = $('promo-date');
       if (dateInput) {
         dateInput.min = data.cycle.start_date;
@@ -218,12 +227,21 @@
 
       const rows = data.top || [];
       const canViewHistory = ['module_leader', 'system_leader', 'lider_supremo'].includes(me.role);
+      // Corte de calificación: puntaje del puesto 20. Del 21 en adelante se muestra
+      // cuántos puntos faltan para alcanzarlo.
+      const slots  = data.qualify_slots || 20;
+      const cutoff = data.qualify_cutoff;
       $('promo-top').innerHTML = rows.length
         ? rows.map((r, i) => {
             const rank = i + 1;
-            const tag = rank <= 5
-              ? '<span class="tag mvp">👑 MVP</span>'
-              : rank <= 30 ? '<span class="tag vip">VIP</span>' : '';
+            const qualified = rank <= slots;
+            const tag = qualified ? '<span class="tag calificado">Calificado</span>' : '';
+            const missing = (!qualified && cutoff != null) ? Math.max(0, cutoff - r.bv_personal) : null;
+            const gapCell = (qualified || missing == null)
+              ? '<span class="muted">—</span>'
+              : (missing === 0
+                  ? '<span class="promo-gap">empate con el puesto 20</span>'
+                  : `<span class="promo-gap">faltan <strong>${missing}</strong> pts</span>`);
             const isMe = r.user_id === me.id;
             const bvCell = canViewHistory
               ? `<strong class="promo-bv-link" data-user-id="${r.user_id}" data-name="${r.full_name.replace(/"/g, '&quot;')}" title="Ver historial de registros" style="color:var(--gold-400);cursor:pointer;text-decoration:underline dotted;">${r.bv_personal}</strong>`
@@ -234,10 +252,11 @@
               <td>${r.full_name}${isMe ? ' <span class="muted" style="font-size:11px;">(yo)</span>' : ''}</td>
               <td>${r.orders_count}</td>
               <td>${bvCell}</td>
+              <td>${gapCell}</td>
               <td class="muted" style="font-size:12px;">${r.last_date || '—'}</td>
             </tr>`;
           }).join('')
-        : '<tr><td colspan="6" class="muted">Sin registros en este ciclo. ¡Sé el primero!</td></tr>';
+        : '<tr><td colspan="7" class="muted">Sin registros en esta promoción. ¡Sé el primero!</td></tr>';
       $('promo-top').querySelectorAll('.promo-bv-link').forEach((el) => {
         el.addEventListener('click', () => openPromoHistoryModal(el.dataset.userId, el.dataset.name));
       });
@@ -245,7 +264,7 @@
       const mine = data.my || [];
       if (mine.length) {
         const totalBV = mine.reduce((s, r) => s + (r.bv_personal || 0), 0);
-        $('promo-mine').textContent = `Ya registraste ${mine.length} orden(es) este ciclo · Total BV: ${totalBV}.`;
+        $('promo-mine').textContent = `Ya registraste ${mine.length} orden(es) en esta promoción · Total puntos: ${totalBV}.`;
       } else {
         $('promo-mine').textContent = '';
       }
@@ -259,17 +278,47 @@
     return false;
   }
 
+  // Eliminar es más amplio que editar: el líder de módulo también puede borrar
+  // registros de puntos de los usuarios de SU módulo.
+  function canDeletePromoRecords(user) {
+    if (canManagePromoRecords(user?.system_id)) return true;
+    if (me.role === 'module_leader') {
+      return me.module_id != null && user?.module_id === me.module_id;
+    }
+    return false;
+  }
+
+  // Envía un registro de puntos. Si el backend responde 409 duplicate (mismo
+  // puntaje que el registro anterior), pide confirmación y reintenta.
+  async function submitPromoRecord(payload) {
+    try {
+      return await api('/api/promotions', { method: 'POST', body: JSON.stringify(payload) });
+    } catch (err) {
+      if (err.status === 409 && err.data && err.data.duplicate) {
+        if (!confirm(err.message)) return null;
+        return api('/api/promotions', {
+          method: 'POST',
+          body: JSON.stringify({ ...payload, confirm_duplicate: true }),
+        });
+      }
+      throw err;
+    }
+  }
+
   async function openPromoHistoryModal(userId, userName) {
     openModal(`Historial · ${userName}`, '<div class="muted">Cargando…</div>');
     try {
       const r = await api(`/api/promotions/user/${userId}`);
       const canManage = canManagePromoRecords(r.user?.system_id);
+      const canDelete = canDeletePromoRecords(r.user);
       const cycleFrom = r.cycle?.start_date || '';
       const cycleTo = r.cycle?.end_date || '';
 
+      const hasActions = canManage || canDelete;
+
       const addFormHtml = canManage ? `
         <form id="promo-add-form" class="form-row form-row--quad" style="margin-bottom:16px;">
-          <div class="field"><label>BV Personal</label><input type="number" min="0" id="pa-bv" required placeholder="0" /></div>
+          <div class="field"><label>Puntos</label><input type="number" min="0" id="pa-bv" required placeholder="0" /></div>
           <div class="field"><label># de Orden</label><input type="text" id="pa-order" required placeholder="Ej. 12345" /></div>
           <div class="field"><label>Fecha</label><input type="date" id="pa-date" min="${cycleFrom}" max="${cycleTo}" required /></div>
           <button class="primary sm" type="submit">Agregar</button>
@@ -278,8 +327,8 @@
 
       const summaryHtml = r.cycle ? `
         <div style="margin-bottom:12px;">
-          <div class="muted" style="font-size:12px;">Ciclo ${cycleFrom} → ${cycleTo}</div>
-          <div style="margin-top:4px;">Total BV: <strong style="color:var(--gold-400);">${r.total}</strong> · ${r.records.length} orden(es)</div>
+          <div class="muted" style="font-size:12px;">${r.cycle.name || 'Promoción'} · ${cycleFrom} → ${cycleTo}</div>
+          <div style="margin-top:4px;">Total puntos: <strong style="color:var(--gold-400);">${r.total}</strong> · ${r.records.length} orden(es)</div>
         </div>` : '';
 
       const rowsHtml = (r.records || []).map((rec) => `
@@ -288,19 +337,19 @@
           <td>${rec.order_number}</td>
           <td><strong style="color:var(--gold-400);">${rec.bv_personal}</strong></td>
           <td class="muted" style="font-size:11px;">${fmtLocal(rec.created_at)}</td>
-          ${canManage ? `<td style="white-space:nowrap;">
-            <button class="ghost-btn sm" data-action="edit-promo" data-id="${rec.id}">Editar</button>
-            <button class="ghost-btn sm" style="margin-left:6px;color:#FF8B95;border-color:rgba(220,90,100,0.3);" data-action="delete-promo" data-id="${rec.id}">Eliminar</button>
+          ${hasActions ? `<td style="white-space:nowrap;">
+            ${canManage ? `<button class="ghost-btn sm" data-action="edit-promo" data-id="${rec.id}">Editar</button>` : ''}
+            ${canDelete ? `<button class="ghost-btn sm" style="${canManage ? 'margin-left:6px;' : ''}color:#FF8B95;border-color:rgba(220,90,100,0.3);" data-action="delete-promo" data-id="${rec.id}">Eliminar</button>` : ''}
           </td>` : ''}
         </tr>
       `).join('');
 
       const tableHtml = (r.records && r.records.length)
         ? `<div class="table-wrap"><table class="table">
-            <thead><tr><th>Fecha</th><th># Orden</th><th>BV</th><th>Registrado</th>${canManage ? '<th></th>' : ''}</tr></thead>
+            <thead><tr><th>Fecha</th><th># Orden</th><th>Puntos</th><th>Registrado</th>${hasActions ? '<th></th>' : ''}</tr></thead>
             <tbody>${rowsHtml}</tbody>
           </table></div>`
-        : '<div class="muted">Sin registros en este ciclo.</div>';
+        : '<div class="muted">Sin registros en esta promoción.</div>';
 
       $('modal-body').innerHTML = `<div class="modal-body" style="max-height:70vh;overflow:auto;">
         ${addFormHtml}${summaryHtml}${tableHtml}
@@ -317,15 +366,13 @@
           addForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             try {
-              await api('/api/promotions', {
-                method: 'POST',
-                body: JSON.stringify({
-                  user_id: userId,
-                  bv_personal: parseInt($('pa-bv').value, 10) || 0,
-                  order_number: $('pa-order').value.trim(),
-                  date: $('pa-date').value,
-                }),
+              const saved = await submitPromoRecord({
+                user_id: userId,
+                bv_personal: parseInt($('pa-bv').value, 10) || 0,
+                order_number: $('pa-order').value.trim(),
+                date: $('pa-date').value,
               });
+              if (!saved) return;
               openPromoHistoryModal(userId, userName);
               loadPromotions();
             } catch (err) { alert(err.message); }
@@ -337,9 +384,12 @@
             openPromoRecordEditor(rec, userId, userName);
           });
         });
+      }
+
+      if (canDelete) {
         $('modal-body').querySelectorAll('[data-action=delete-promo]').forEach((b) => {
           b.addEventListener('click', async () => {
-            if (!confirm('¿Eliminar este registro de BV?')) return;
+            if (!confirm('¿Eliminar este registro de puntos?')) return;
             try {
               await api(`/api/promotions/${b.dataset.id}`, { method: 'DELETE' });
               openPromoHistoryModal(userId, userName);
@@ -354,8 +404,8 @@
   }
 
   function openPromoRecordEditor(rec, userId, userName) {
-    openModal('Editar registro BV', `
-      <div class="field"><label>BV Personal</label><input type="number" min="0" id="pe-bv" value="${rec.bv_personal}" required /></div>
+    openModal('Editar registro de puntos', `
+      <div class="field"><label>Puntos</label><input type="number" min="0" id="pe-bv" value="${rec.bv_personal}" required /></div>
       <div class="field"><label># de Orden</label><input type="text" id="pe-order" value="${String(rec.order_number).replace(/"/g, '&quot;')}" required /></div>
       <div class="field"><label>Fecha</label><input type="date" id="pe-date" value="${rec.date}" required /></div>
       <div style="display:flex;gap:10px;margin-top:14px;">
@@ -384,14 +434,12 @@
     $('promo-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       try {
-        await api('/api/promotions', {
-          method: 'POST',
-          body: JSON.stringify({
-            bv_personal: parseInt($('promo-bv').value, 10) || 0,
-            order_number: $('promo-order').value.trim(),
-            date: $('promo-date').value,
-          }),
+        const saved = await submitPromoRecord({
+          bv_personal: parseInt($('promo-bv').value, 10) || 0,
+          order_number: $('promo-order').value.trim(),
+          date: $('promo-date').value,
         });
+        if (!saved) return;
         $('promo-bv').value = '';
         $('promo-order').value = '';
         loadPromotions();

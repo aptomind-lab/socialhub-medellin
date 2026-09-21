@@ -159,15 +159,19 @@
       <!-- PROMOCIONES -->
       <section class="view" data-view="promociones">
         <h2 class="view-title">Promociones</h2>
+        <div class="promo-banner">
+          <div class="promo-banner-name" id="promo-name">LIFE STYLE DAY CARTAGENA</div>
+          <div class="promo-banner-sub">Compiten todos los usuarios de la plataforma · Califican los primeros 20 puestos</div>
+        </div>
         <div class="promo-quote">Los ganadores ganan porque no lo pueden evitar, es parte de su identidad</div>
 
         <article class="panel">
           <header class="panel-head">
-            <h3>Registrar BV Personal</h3>
+            <h3>Registrar puntos</h3>
             <span class="muted" id="promo-cycle-range" style="font-size:12px;">—</span>
           </header>
           <form id="promo-form" class="form-row form-row--quad">
-            <div class="field"><label>BV Personal</label><input type="number" inputmode="numeric" id="promo-bv" min="0" required placeholder="0" /></div>
+            <div class="field"><label>Puntos</label><input type="number" inputmode="numeric" id="promo-bv" min="0" required placeholder="0" /></div>
             <div class="field"><label># de Orden</label><input type="text" id="promo-order" required placeholder="Ej. 12345" /></div>
             <div class="field"><label>Fecha</label><input type="date" id="promo-date" required /></div>
             <button class="primary sm" type="submit">Guardar</button>
@@ -176,9 +180,9 @@
         </article>
 
         <article class="panel">
-          <header class="panel-head"><h3>Top 50 · BV Personal del ciclo</h3></header>
+          <header class="panel-head"><h3>Top 80 · LIFE STYLE DAY CARTAGENA</h3></header>
           <div class="table-wrap"><table class="table">
-            <thead><tr><th>#</th><th>Categoría</th><th>Nombre</th><th>Órdenes</th><th>BV Total</th><th>Última fecha</th></tr></thead>
+            <thead><tr><th>#</th><th>Estado</th><th>Nombre</th><th>Órdenes</th><th>Puntos</th><th>Faltan para Top 20</th><th>Última fecha</th></tr></thead>
             <tbody id="promo-top"></tbody>
           </table></div>
         </article>

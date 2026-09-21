@@ -216,10 +216,12 @@ CREATE INDEX IF NOT EXISTS idx_wg_guest ON wg_attendance(guest_id);
 CREATE INDEX IF NOT EXISTS idx_wg_week  ON wg_attendance(iso_week);
 CREATE INDEX IF NOT EXISTS idx_wg_date  ON wg_attendance(attended_date);
 
--- Promociones: ciclos configurables + registros de BV Personal por usuario.
--- Primer ciclo: hoy → 2026-08-04. Después reset mensual (día 5 → día 4 del mes siguiente).
+-- Promociones: campañas con nombre + registros de puntos por usuario.
+-- Campaña vigente: LIFE STYLE DAY CARTAGENA, 2026-09-01 → 2027-04-30, en la que
+-- compiten todos los usuarios. La siembra la hace routes/promotions.js al arrancar.
 CREATE TABLE IF NOT EXISTS promotion_cycles (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  name        TEXT,
   start_date  TEXT    NOT NULL,
   end_date    TEXT    NOT NULL,
   created_at  TEXT    NOT NULL DEFAULT (datetime('now'))

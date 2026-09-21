@@ -5,8 +5,19 @@ const { localDate } = require('../utils/tz');
 
 const router = express.Router();
 
-// Safety-net: garantiza que las tablas existan en producción sin depender de
-// que se corra la migración 016 manualmente. Idempotente por IF NOT EXISTS.
+// Campaña vigente: LIFE STYLE DAY CARTAGENA. Un único ciclo largo (no mensual),
+// retroactivo a septiembre 2026, en el que compiten TODOS los usuarios.
+const PROMO_NAME  = 'LIFE STYLE DAY CARTAGENA';
+const PROMO_START = '2026-09-01';
+const PROMO_END   = '2027-04-30';
+
+// Tamaño del ranking publicado y cuántos puestos quedan CALIFICADOS.
+const TOP_LIMIT      = 80;
+const QUALIFY_SLOTS  = 20;
+
+// Safety-net: garantiza que las tablas, la columna `name` y la campaña vigente
+// existan en producción sin depender de correr las migraciones 016/019 a mano.
+// Idempotente.
 (function ensureTables() {
   try {
     db.exec(`
@@ -29,87 +40,88 @@ const router = express.Router();
       CREATE INDEX IF NOT EXISTS idx_promotions_user  ON promotions(user_id);
       CREATE INDEX IF NOT EXISTS idx_promotions_bv    ON promotions(bv_personal);
     `);
-    const c = db.prepare('SELECT COUNT(*) AS c FROM promotion_cycles').get().c;
-    if (c === 0) {
-      db.prepare('INSERT INTO promotion_cycles (start_date, end_date) VALUES (?, ?)')
-        .run(localDate(), '2026-08-04');
+
+    const hasName = db.prepare(`PRAGMA table_info(promotion_cycles)`).all().some((c) => c.name === 'name');
+    if (!hasName) {
+      db.exec(`ALTER TABLE promotion_cycles ADD COLUMN name TEXT`);
+      db.prepare(`UPDATE promotion_cycles SET name = 'Ciclo BV mensual' WHERE name IS NULL`).run();
+    }
+
+    let cycle = db.prepare('SELECT * FROM promotion_cycles WHERE name = ?').get(PROMO_NAME);
+    if (!cycle) {
+      const info = db.prepare('INSERT INTO promotion_cycles (name, start_date, end_date) VALUES (?, ?, ?)')
+        .run(PROMO_NAME, PROMO_START, PROMO_END);
+      cycle = db.prepare('SELECT * FROM promotion_cycles WHERE id = ?').get(info.lastInsertRowid);
+      // Retroactivo: los registros de sept-2026 en adelante pasan a esta campaña.
+      db.prepare(`
+        UPDATE promotions SET cycle_id = ?
+        WHERE cycle_id != ? AND date >= ? AND date <= ?
+      `).run(cycle.id, cycle.id, PROMO_START, PROMO_END);
     }
   } catch (e) { console.error('[promotions/ensure]', e.message); }
 })();
 
-// Suma n días a un YYYY-MM-DD.
-function addDays(iso, n) {
-  const d = new Date(iso + 'T12:00:00Z');
-  d.setUTCDate(d.getUTCDate() + n);
-  return d.toISOString().slice(0, 10);
-}
-
-// Dado un start_date (ej. día 5 del mes), calcula el fin del ciclo mensual
-// como el día 4 del mes siguiente. Ej: 2026-08-05 → 2026-09-04.
-function monthlyEndFrom(startIso) {
-  const [y, m] = startIso.split('-').map(Number);
-  const nextY = m === 12 ? y + 1 : y;
-  const nextM = m === 12 ? 1 : m + 1;
-  return `${nextY}-${String(nextM).padStart(2, '0')}-04`;
-}
-
-// ¿Puede `actor` gestionar (crear/editar/borrar) un registro de BV de un usuario
-// cuyo system_id es `targetSystemId`? lider_supremo: cualquiera. system_leader:
-// solo su propio sistema. Resto: sin permiso de gestión (solo su propio registro,
-// vía el flujo normal de POST / sin user_id).
+// ¿Puede `actor` crear/editar un registro de BV de un usuario cuyo system_id es
+// `targetSystemId`? lider_supremo: cualquiera. system_leader: solo su propio
+// sistema. Resto: sin permiso de gestión (solo su propio registro, vía el flujo
+// normal de POST / sin user_id).
 function canManagePromotions(actor, targetSystemId) {
   if (actor.role === 'lider_supremo') return true;
   if (actor.role === 'system_leader') return targetSystemId === actor.system_id;
   return false;
 }
 
-// Devuelve el ciclo vigente para hoy. Si el último ciclo ya venció, auto-crea
-// el siguiente (start = último.end + 1 día, end = día 4 del mes siguiente),
-// avanzando cuantas veces sea necesario si hubo un gap grande.
+// Eliminar es más amplio que editar: el líder de módulo también puede borrar
+// registros de puntos de los usuarios de SU módulo.
+function canDeletePromotion(actor, target) {
+  if (canManagePromotions(actor, target.system_id)) return true;
+  if (actor.role === 'module_leader') {
+    return actor.module_id != null && target.module_id === actor.module_id;
+  }
+  return false;
+}
+
+// Devuelve la campaña vigente hoy. Si ninguna cubre la fecha actual (la campaña
+// todavía no arranca o ya cerró), se devuelve la más reciente para que el tablero
+// siga mostrando las posiciones; el POST igual valida el rango de fechas.
 function getCurrentCycle() {
   const today = localDate();
-  let cycle = db.prepare(`
+  return db.prepare(`
     SELECT * FROM promotion_cycles
     WHERE start_date <= ? AND end_date >= ?
     ORDER BY id DESC LIMIT 1
-  `).get(today, today);
-  if (cycle) return cycle;
-
-  const last = db.prepare('SELECT * FROM promotion_cycles ORDER BY id DESC LIMIT 1').get();
-  if (!last) return null;
-
-  let start = addDays(last.end_date, 1);
-  let end   = monthlyEndFrom(start);
-  while (today > end) {
-    // gap: avanza un ciclo más
-    start = addDays(end, 1);
-    end   = monthlyEndFrom(start);
-  }
-  const info = db.prepare('INSERT INTO promotion_cycles (start_date, end_date) VALUES (?, ?)').run(start, end);
-  return db.prepare('SELECT * FROM promotion_cycles WHERE id = ?').get(info.lastInsertRowid);
+  `).get(today, today)
+    || db.prepare('SELECT * FROM promotion_cycles ORDER BY id DESC LIMIT 1').get()
+    || null;
 }
 
-// GET /api/promotions — ciclo vigente + top 50 records + mis registros del ciclo.
+// GET /api/promotions — campaña vigente + Top 80 + mis registros de la campaña.
 router.get('/', requireAuth, (req, res) => {
   const cycle = getCurrentCycle();
-  if (!cycle) return res.json({ cycle: null, top: [], my: [] });
+  if (!cycle) return res.json({ cycle: null, top: [], my: [], qualify_slots: QUALIFY_SLOTS, qualify_cutoff: null });
 
-  // Top 50 usuarios (no records): BV Personal es acumulativo dentro del ciclo,
-  // así cada usuario aparece una sola vez con la suma de sus órdenes.
+  // Compiten TODOS los usuarios de la plataforma: se parte de `users` con LEFT
+  // JOIN, así quien aún no registra puntos aparece en 0 y ve cuánto le falta.
+  // Los puntos son acumulativos, por eso cada usuario aparece una sola vez.
   const top = db.prepare(`
     SELECT
       u.id       AS user_id,
       u.full_name,
-      SUM(p.bv_personal) AS bv_personal,
-      COUNT(*)   AS orders_count,
+      COALESCE(SUM(p.bv_personal), 0) AS bv_personal,
+      COUNT(p.id) AS orders_count,
       MAX(p.date) AS last_date
-    FROM promotions p
-    JOIN users u ON u.id = p.user_id
-    WHERE p.cycle_id = ?
+    FROM users u
+    LEFT JOIN promotions p ON p.user_id = u.id AND p.cycle_id = ?
+    WHERE u.blocked = 0
     GROUP BY u.id
     ORDER BY bv_personal DESC, u.full_name ASC
-    LIMIT 50
+    LIMIT ${TOP_LIMIT}
   `).all(cycle.id);
+
+  // Puntaje del puesto 20 = corte de calificación. Los puestos 21-80 muestran
+  // cuánto les falta para alcanzarlo.
+  const cutoffRow = top[QUALIFY_SLOTS - 1];
+  const qualify_cutoff = cutoffRow ? cutoffRow.bv_personal : null;
 
   const my = db.prepare(`
     SELECT id, bv_personal, order_number, date, created_at
@@ -117,14 +129,14 @@ router.get('/', requireAuth, (req, res) => {
     ORDER BY created_at DESC
   `).all(cycle.id, req.user.id);
 
-  res.json({ cycle, top, my });
+  res.json({ cycle, top, my, qualify_slots: QUALIFY_SLOTS, qualify_cutoff });
 });
 
 // POST /api/promotions — registrar BV/orden/fecha. Por defecto para el usuario
 // autenticado; si se envía user_id de otro usuario, requiere que el actor sea
 // system_leader (mismo sistema) o lider_supremo.
 router.post('/', requireAuth, (req, res) => {
-  const { bv_personal, order_number, date, user_id } = req.body || {};
+  const { bv_personal, order_number, date, user_id, confirm_duplicate } = req.body || {};
   const bv = parseInt(bv_personal, 10);
   if (!Number.isFinite(bv) || bv < 0) return res.status(400).json({ error: 'BV Personal inválido' });
   const order = String(order_number || '').trim();
@@ -147,6 +159,24 @@ router.post('/', requireAuth, (req, res) => {
     return res.status(400).json({ error: `La fecha debe estar entre ${cycle.start_date} y ${cycle.end_date}` });
   }
 
+  // Anti-duplicado: si el último registro de la campaña para este usuario tiene
+  // exactamente el mismo puntaje, se pide confirmación explícita antes de sumar.
+  if (!confirm_duplicate) {
+    const last = db.prepare(`
+      SELECT bv_personal, order_number, date FROM promotions
+      WHERE cycle_id = ? AND user_id = ?
+      ORDER BY id DESC LIMIT 1
+    `).get(cycle.id, targetUserId);
+    if (last && last.bv_personal === bv) {
+      return res.status(409).json({
+        duplicate: true,
+        bv_personal: bv,
+        last,
+        error: `¿Seguro que quieres agregar ${bv} puntos de nuevo? Ya registraste este mismo valor.`,
+      });
+    }
+  }
+
   const info = db.prepare(`
     INSERT INTO promotions (user_id, cycle_id, bv_personal, order_number, date)
     VALUES (?, ?, ?, ?, ?)
@@ -167,7 +197,7 @@ router.get('/user/:userId', requireAuth, (req, res) => {
   const userId = parseInt(req.params.userId, 10);
   if (!userId) return res.status(400).json({ error: 'userId inválido' });
 
-  const user = db.prepare('SELECT id, full_name, system_id FROM users WHERE id = ?').get(userId);
+  const user = db.prepare('SELECT id, full_name, system_id, module_id FROM users WHERE id = ?').get(userId);
   if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
 
   const cycle = getCurrentCycle();
@@ -243,16 +273,16 @@ router.patch('/:id', requireAuth, (req, res) => {
   });
 });
 
-// DELETE /api/promotions/:id — eliminar un registro de BV.
-// Solo system_leader (mismo sistema del dueño del registro) o lider_supremo.
+// DELETE /api/promotions/:id — eliminar un registro de puntos.
+// lider_supremo: cualquiera. system_leader: su sistema. module_leader: su módulo.
 router.delete('/:id', requireAuth, (req, res) => {
   const record = db.prepare(`
-    SELECT p.id, u.system_id AS user_system_id
+    SELECT p.id, u.system_id, u.module_id
     FROM promotions p JOIN users u ON u.id = p.user_id
     WHERE p.id = ?
   `).get(req.params.id);
   if (!record) return res.status(404).json({ error: 'Registro no encontrado' });
-  if (!canManagePromotions(req.user, record.user_system_id)) {
+  if (!canDeletePromotion(req.user, record)) {
     return res.status(403).json({ error: 'No tienes permiso para eliminar este registro' });
   }
   db.prepare('DELETE FROM promotions WHERE id = ?').run(req.params.id);
