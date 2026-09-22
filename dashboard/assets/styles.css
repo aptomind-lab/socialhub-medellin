@@ -27,8 +27,9 @@
   --border-strong: rgba(255, 255, 255, 0.14);
   --accent-border: rgba(201, 162, 74, 0.35);  /* reserved: focus / active / selection */
 
-  /* ===== Typography — one system font family, fixed rem scale ===== */
-  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, "Segoe UI", Roboto, sans-serif;
+  /* ===== Typography — Manrope (Google Fonts, cargada en index.html <head>),
+     con el stack de system-font como fallback si la carga falla o es lenta. ===== */
+  --font-sans: "Manrope", -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
 
   --text-2xs: 0.6875rem;  /* 11px — overlines, table th, micro labels */
@@ -67,18 +68,21 @@
   --dur-base:  180ms;
   --dur-modal: 220ms;
 
-  /* ===== Elevation ===== */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
-  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35);
-  --shadow-lg: 0 20px 60px rgba(0, 0, 0, 0.5);
-  --shadow-press: 0 1px 4px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  --shadow-tap: 0 2px 10px rgba(0, 0, 0, 0.3);
+  /* ===== Elevation — tintada al navy del sistema, no negro puro ===== */
+  --shadow-sm: 0 1px 3px rgba(5, 10, 20, 0.45);
+  --shadow-md: 0 14px 36px -10px rgba(4, 9, 20, 0.55);
+  --shadow-lg: 0 18px 40px -14px rgba(3, 7, 16, 0.6);
+  --shadow-press: 0 1px 4px rgba(4, 9, 20, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --shadow-tap: 0 3px 14px rgba(4, 9, 18, 0.4);
+  --shadow-float: 0 16px 40px -12px rgba(3, 8, 18, 0.65); /* KPI/alert — superficie "flotante" */
 
-  /* ===== Glass surfaces (cards) — subtle, reuses existing hues, no new palette ===== */
-  --glass-bg: rgba(23, 38, 58, 0.6);
-  --glass-blur: 18px;
-  --glass-border-a: rgba(255, 255, 255, 0.14);
-  --glass-border-b: rgba(201, 162, 74, 0.22);
+  /* ===== Glass surfaces — reservado a KPI/alert/modal/banner (dato destacado).
+     Los paneles de contenido (tablas, gráficos, forms) usan superficie sólida,
+     ver .panel más abajo. ===== */
+  --glass-bg: rgba(23, 38, 58, 0.55);
+  --glass-blur: 20px;
+  --glass-border-a: rgba(255, 255, 255, 0.16);
+  --glass-border-b: rgba(201, 162, 74, 0.4);
 
   /* ===== Z-index scale ===== */
   --z-dropdown: 20;
@@ -167,8 +171,8 @@ button { font-family: var(--font-sans); }
   box-shadow: var(--shadow-md);
 }
 .login-card h1 {
-  font-weight: 700; font-size: var(--text-4xl); letter-spacing: -0.02em;
-  line-height: 1.1; margin: 0 0 var(--space-6);
+  font-weight: 800; font-size: var(--text-4xl); letter-spacing: -0.03em;
+  line-height: 1.08; margin: 0 0 var(--space-6);
 }
 .login-card label {
   display: block; font-size: var(--text-2xs); letter-spacing: 0.14em;
@@ -269,7 +273,16 @@ button.primary.sm { padding: var(--space-2) var(--space-4); font-size: var(--tex
 .text-link:hover { text-decoration: underline; }
 
 /* ==== APP ==== */
-#app-screen.active { display: grid; grid-template-columns: 264px 1fr; min-height: 100vh; }
+/* Mismo patrón radial que ya usa #login-screen, mucho más sutil — le da a las
+   superficies glass (KPI, alert-block, modal) algo real detrás que desenfocar.
+   La sidebar tiene fondo sólido propio y lo tapa sin necesidad de más reglas. */
+#app-screen.active {
+  display: grid; grid-template-columns: 264px 1fr; min-height: 100vh;
+  background:
+    radial-gradient(45% 40% at 88% 4%, rgba(70, 176, 168, 0.07), transparent 60%),
+    radial-gradient(50% 45% at 4% 92%, rgba(201, 162, 74, 0.05), transparent 60%),
+    var(--bg);
+}
 
 .sidebar {
   background: var(--surface);
@@ -293,13 +306,25 @@ button.primary.sm { padding: var(--space-2) var(--space-4); font-size: var(--tex
 
 .nav { display: flex; flex-direction: column; gap: var(--space-1); flex: 1; overflow-y: auto; }
 .nav-item {
-  display: block; padding: var(--space-2) var(--space-3);
+  display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3);
   font-size: var(--text-sm); letter-spacing: 0.01em;
   color: var(--ink-2); text-decoration: none;
   border-radius: var(--radius-sm); cursor: pointer;
   border: 1px solid transparent;
   transition: background var(--dur-base) var(--ease-out), color var(--dur-base) var(--ease-out);
 }
+/* Los pocos nav-item que ya llevan un emoji en su copy (Promociones, Top LATAM,
+   Logros — vienen del texto real, no los inventamos) lo tratan como un glifo
+   controlado: tamaño fijo, alineado, desaturado hasta hover/active. El resto
+   de items se queda sin ícono — texto-solo en sidebar es un patrón legítimo,
+   forzar 12 iconos nuevos sería inventar semántica que el producto no tiene. */
+.nav-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; flex-shrink: 0; font-size: 13px; line-height: 1;
+  filter: grayscale(0.5) opacity(0.7);
+  transition: filter var(--dur-base) var(--ease-out);
+}
+.nav-item:hover .nav-icon, .nav-item.active .nav-icon { filter: grayscale(0) opacity(1); }
 @media (hover: hover) and (pointer: fine) {
   .nav-item:hover { background: rgba(255, 255, 255, 0.04); }
 }
@@ -372,8 +397,8 @@ button.primary.sm { padding: var(--space-2) var(--space-4); font-size: var(--tex
 .view.active > .panel:nth-of-type(4),
 .view.active > .alert-grid > .alert-block:nth-child(4) { animation-delay: 120ms; }
 .view-title {
-  font-weight: 700; font-size: var(--text-3xl); margin: 0 0 var(--space-6);
-  letter-spacing: -0.02em; text-wrap: balance;
+  font-weight: 800; font-size: var(--text-3xl); margin: 0 0 var(--space-6);
+  letter-spacing: -0.03em; text-wrap: balance;
 }
 
 .kpi-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-4); margin-bottom: var(--space-6); }
@@ -384,8 +409,9 @@ button.primary.sm { padding: var(--space-2) var(--space-4); font-size: var(--tex
     linear-gradient(135deg, var(--glass-border-b), var(--glass-border-a) 45%, transparent 75%) border-box;
   border: 1px solid transparent; border-radius: var(--radius-lg);
   padding: var(--space-6); position: relative;
-  backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
+  backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  box-shadow: var(--shadow-float);
 }
 .kpi--accent {
   background:
@@ -404,9 +430,9 @@ button.primary.sm { padding: var(--space-2) var(--space-4); font-size: var(--tex
 }
 .kpi-label { font-size: var(--text-sm); color: var(--ink-2); margin-bottom: var(--space-4); }
 .kpi-value {
-  font-weight: 700; font-variant-numeric: tabular-nums;
+  font-weight: 800; font-variant-numeric: tabular-nums;
   font-size: var(--text-4xl); line-height: 1; color: var(--ink); margin-bottom: var(--space-2);
-  letter-spacing: -0.02em;
+  letter-spacing: -0.04em;
 }
 .kpi-value--accent { color: var(--accent-strong); }
 .kpi-value--positive { color: var(--positive-strong); }
@@ -415,14 +441,16 @@ button.primary.sm { padding: var(--space-2) var(--space-4); font-size: var(--tex
 
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-5); }
 
+/* Superficie sólida y contenida — el glass se reserva para KPI/alert/modal/
+   banner (dato destacado, "flotante"). El panel es donde vive el contenido
+   (tablas, gráficos, forms): plano, sin blur, radius más cerrado. Ese
+   contraste es lo que da jerarquía real en vez de repetir el mismo
+   tratamiento en cada card. */
 .panel {
-  background:
-    linear-gradient(var(--glass-bg), var(--glass-bg)) padding-box,
-    linear-gradient(135deg, var(--glass-border-b), var(--glass-border-a) 40%, transparent 70%) border-box;
-  border: 1px solid transparent;
-  border-radius: var(--radius-lg); padding: var(--space-6); margin-bottom: var(--space-5);
-  backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md); padding: var(--space-6); margin-bottom: var(--space-5);
+  box-shadow: var(--shadow-sm);
 }
 .panel-head {
   display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-4);
@@ -562,8 +590,8 @@ button.primary.sm { padding: var(--space-2) var(--space-4); font-size: var(--tex
   border: 1px solid transparent;
   border-radius: var(--radius-lg); max-width: 540px; width: 100%; padding: var(--space-6);
   box-shadow: var(--shadow-lg);
-  backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
+  backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
   transform: scale(1); opacity: 1;
   transition: transform var(--dur-modal) var(--ease-out), opacity var(--dur-modal) var(--ease-out);
 
@@ -601,13 +629,13 @@ button.primary.sm { padding: var(--space-2) var(--space-4); font-size: var(--tex
 .color-chip.light_green  { background: rgba(70,176,168,0.12); color: #8FE0D8; border-color: rgba(70,176,168,0.32); }
 .color-chip.light_green::before  { background: #8FE0D8; }
 .color-chip.strong_green { background: rgba(34,139,90,0.18); color: #4FE3A0; border-color: rgba(70,200,120,0.4); }
-.color-chip.strong_green::before { background: #4FE3A0; box-shadow: 0 0 8px #4FE3A0; }
+.color-chip.strong_green::before { background: #4FE3A0; }
 .color-chip.yellow       { background: rgba(217,184,113,0.16); color: var(--accent-strong); border-color: rgba(201,162,74,0.35); }
 .color-chip.yellow::before       { background: var(--accent-strong); }
 .color-chip.orange       { background: rgba(255,123,61,0.16); color: var(--warning-strong); border-color: rgba(255,123,61,0.45); }
-.color-chip.orange::before       { background: var(--warning); box-shadow: 0 0 8px var(--warning); }
+.color-chip.orange::before       { background: var(--warning); }
 .color-chip.red          { background: rgba(220,60,70,0.2); color: var(--danger-strong); border-color: rgba(220,90,100,0.5); }
-.color-chip.red::before          { background: var(--danger); box-shadow: 0 0 8px var(--danger); }
+.color-chip.red::before          { background: var(--danger); }
 .color-chip.black        { background: rgba(10,10,15,0.85); color: #E0E0E5; border-color: rgba(255,255,255,0.2); }
 .color-chip.black::before        { background: #1a1a1f; border: 1px solid #555; }
 
@@ -616,7 +644,7 @@ button.primary.sm { padding: var(--space-2) var(--space-4); font-size: var(--tex
   display: inline-block; min-width: 18px; padding: 1px var(--space-2);
   background: var(--warning); color: var(--bg);
   border-radius: var(--radius-pill); font-size: var(--text-2xs); font-weight: 700;
-  letter-spacing: 0.02em; margin-left: var(--space-2); vertical-align: middle;
+  letter-spacing: 0.02em; margin-left: auto; /* .nav-item ahora es flex: alinea el badge al borde derecho */
   text-align: center;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
 }
@@ -634,8 +662,9 @@ button.primary.sm { padding: var(--space-2) var(--space-4); font-size: var(--tex
     linear-gradient(135deg, var(--glass-border-b), var(--glass-border-a) 40%, transparent 70%) border-box;
   border: 1px solid transparent;
   border-radius: var(--radius-lg); padding: var(--space-5);
-  backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
+  backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  box-shadow: var(--shadow-float);
 }
 .alert-block-head {
   display: grid; grid-template-columns: 36px 1fr auto;
@@ -824,7 +853,6 @@ button.primary.sm { padding: var(--space-2) var(--space-4); font-size: var(--tex
 .achievement.unlocked {
   background: rgba(201, 162, 74, 0.1);
   border-color: rgba(201, 162, 74, 0.4);
-  box-shadow: 0 4px 14px rgba(201, 162, 74, 0.12);
 }
 .achievement.locked { opacity: 0.55; }
 .achievement-icon { font-size: 38px; line-height: 1; margin-bottom: var(--space-3); }
@@ -1059,20 +1087,28 @@ button.primary.sm { padding: var(--space-2) var(--space-4); font-size: var(--tex
 /* ─── Promociones ─── */
 .promo-banner {
   border: 1px solid var(--accent-border, rgba(201, 162, 74, 0.35));
-  background: linear-gradient(135deg, rgba(201, 162, 74, 0.16), rgba(201, 162, 74, 0.04));
+  background: linear-gradient(135deg, rgba(201, 162, 74, 0.18), rgba(201, 162, 74, 0.03) 70%);
   border-radius: var(--radius-md);
-  padding: var(--space-4) var(--space-5);
-  margin-bottom: var(--space-4);
+  padding: var(--space-5) var(--space-6);
+  margin-bottom: var(--space-5);
 }
+/* El nombre de campaña usaba el mismo lenguaje tipográfico que un overline
+   (uppercase + tracking ancho a 22px) — leía como etiqueta, no como titular,
+   siendo lo más importante de la vista. En vez de sumarle un kicker arriba
+   (patrón de IA genérica, señalado por el detector — banned outright), el
+   nombre mismo sube de peso y tamaño para cargar todo el rol de headline;
+   "Promoción vigente" pasa a la línea de contexto de abajo. */
 .promo-banner-name {
-  font-size: var(--text-xl);
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  margin: 0;
+  font-size: var(--text-3xl);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
   text-transform: uppercase;
   color: var(--accent-strong);
 }
 .promo-banner-sub {
-  margin-top: var(--space-1);
+  margin-top: var(--space-2);
   font-size: var(--text-xs);
   color: var(--ink-muted);
 }
@@ -1129,6 +1165,9 @@ body.inactive-user #app-screen .view {
   user-select: none;
 }
 .inactive-message {
+  /* Vive sobre un overlay a pantalla completa ya oscurecido — una sombra de
+     elevación no aporta profundidad real ahí. El borde de color semántico
+     (danger) ya es la única señal de borde que necesita. */
   max-width: 460px;
   background: oklch(18% 0.06 25);
   border: 1px solid var(--danger);
@@ -1136,7 +1175,6 @@ body.inactive-user #app-screen .view {
   padding: var(--space-8) var(--space-7);
   text-align: center;
   color: var(--danger-strong);
-  box-shadow: var(--shadow-lg);
 }
 .inactive-title {
   font-size: var(--text-xl);
@@ -1152,12 +1190,17 @@ body.inactive-user #app-screen .view {
   color: var(--ink-2);
 }
 .inactive-message .primary {
+  /* --ink (ivory) sobre --danger da 4.36:1, bajo el piso WCAG AA de 4.5:1.
+     Blanco puro sí pasa (5.2:1) sin tocar el token --danger compartido. */
   background: var(--danger);
   border-color: var(--danger);
-  color: var(--ink);
+  color: #fff;
 }
 @media (hover: hover) and (pointer: fine) {
-  .inactive-message .primary:hover { background: oklch(60% 0.16 20); }
+  /* Oscurece en hover en vez de aclarar — con texto blanco, aclarar el rojo
+     bajaba el contraste a 3.6:1 (falla WCAG); oscurecer da 7.7:1 y además
+     lee mejor como feedback de "presionado". */
+  .inactive-message .primary:hover { background: oklch(46% 0.14 20); }
 }
 
 /* ==== Utilities (replace one-off inline styles found in index.html) ==== */
@@ -1173,7 +1216,7 @@ body.inactive-user #app-screen .view {
 .field-label-sm { font-size: var(--text-2xs); letter-spacing: 0.06em; color: var(--ink-muted); text-transform: uppercase; }
 .mb-5 { margin-bottom: var(--space-5); }
 
-.tag--xs { font-size: 10px; }
+.tag--xs { font-size: var(--text-2xs); }
 .tag--tiktok { background: rgba(255, 0, 80, 0.14); color: #FF6B95; border-color: rgba(255, 0, 80, 0.3); }
 .text--tiktok { color: #FF6B95; }
 

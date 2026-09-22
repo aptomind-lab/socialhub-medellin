@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#0B1B2B" />
   <title>SHM — Dashboard</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230B1B2B'/%3E%3Cpolygon points='32,14 50,32 32,50 14,32' fill='%23C9A24A'/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="assets/styles.css" />
 </head>
 <body>
@@ -17,7 +21,6 @@
         <span class="name">SHM</span>
       </div>
       <div class="login-card">
-        <div class="overline">Acceso al Sistema</div>
         <h1>Iniciar sesión</h1>
         <form id="login-form">
           <label>Código de distribuidor</label>
@@ -37,7 +40,6 @@
     <div class="login-wrap">
       <div class="brand-row"><span class="mark">◆</span><span class="name">SHM</span></div>
       <div class="login-card">
-        <div class="overline">Recuperación</div>
         <h1>Recupera tu contraseña</h1>
         <p class="legal" style="margin: 0 0 18px;">Ingresa tu ID de distribuidor. Te enviaremos al correo registrado un enlace válido por 24 horas para crear una nueva contraseña.</p>
         <form id="forgot-form">
@@ -56,7 +58,6 @@
     <div class="login-wrap">
       <div class="brand-row"><span class="mark">◆</span><span class="name">SHM</span></div>
       <div class="login-card">
-        <div class="overline">Nueva contraseña</div>
         <h1>Establece tu contraseña</h1>
         <form id="reset-form">
           <label>Nueva contraseña (mín. 8)</label>
@@ -78,7 +79,6 @@
         <span class="name">SHM</span>
       </div>
       <div class="login-card">
-        <div class="overline">Primer ingreso</div>
         <h1>Completa tu perfil</h1>
         <p class="legal" style="margin: 0 0 22px;">Para activar tu acceso necesitamos tu nombre, celular y una contraseña personal. Esto reemplaza la contraseña temporal que te enviamos por correo.</p>
         <form id="onboarding-form">
@@ -118,7 +118,7 @@
         <div class="me-scope" id="me-scope"></div>
       </div>
       <nav class="nav">
-        <a class="nav-item" data-view="promociones">Promociones 🏆</a>
+        <a class="nav-item" data-view="promociones"><span class="nav-icon">🏆</span>Promociones</a>
         <a class="nav-item active" data-view="overview">Resumen</a>
         <a class="nav-item" data-view="alerts">Alertas <span class="nav-badge" id="alerts-badge" hidden>0</span></a>
         <a class="nav-item" data-view="comparison">Comparación</a>
@@ -131,8 +131,8 @@
         <a class="nav-item" data-view="guests">Invitados</a>
         <a class="nav-item" data-view="messages">Mensajes</a>
         <a class="nav-item" data-view="events" data-roles="lider_supremo,system_leader,module_leader">Eventos</a>
-        <a class="nav-item" data-view="latam">Top LATAM 🌎</a>
-        <a class="nav-item" data-view="logros">Logros 🔥</a>
+        <a class="nav-item" data-view="latam"><span class="nav-icon">🌎</span>Top LATAM</a>
+        <a class="nav-item" data-view="logros"><span class="nav-icon">🔥</span>Logros</a>
         <a class="nav-item" data-view="profile">Mi Perfil</a>
       </nav>
       <button id="logout-btn" class="ghost-btn">Cerrar sesión</button>
@@ -160,8 +160,8 @@
       <section class="view" data-view="promociones">
         <h2 class="view-title">Promociones</h2>
         <div class="promo-banner">
-          <div class="promo-banner-name" id="promo-name">LIFE STYLE DAY CARTAGENA</div>
-          <div class="promo-banner-sub">Compiten todos los usuarios de la plataforma · Califican los primeros 20 puestos</div>
+          <h3 class="promo-banner-name" id="promo-name">LIFE STYLE DAY CARTAGENA</h3>
+          <div class="promo-banner-sub">Promoción vigente · Compiten todos los usuarios de la plataforma · Califican los primeros 20 puestos</div>
         </div>
         <div class="promo-quote">Los ganadores ganan porque no lo pueden evitar, es parte de su identidad</div>
 
