@@ -9,13 +9,16 @@ CREATE TABLE IF NOT EXISTS systems (
   created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
+-- number es único por sistema, no global: dos sistemas distintos pueden
+-- tener cada uno un Módulo 1, Módulo 2, etc.
 CREATE TABLE IF NOT EXISTS modules (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
-  number       INTEGER NOT NULL UNIQUE,
+  number       INTEGER NOT NULL,
   name         TEXT    NOT NULL,
   active       INTEGER NOT NULL DEFAULT 1,
   system_id    INTEGER REFERENCES systems(id) ON DELETE SET NULL,
-  created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
+  created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(system_id, number)
 );
 CREATE INDEX IF NOT EXISTS idx_modules_system_id ON modules(system_id);
 
