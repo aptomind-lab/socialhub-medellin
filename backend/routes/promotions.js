@@ -15,6 +15,24 @@ const PROMO_END   = '2027-04-30';
 const TOP_LIMIT      = 80;
 const QUALIFY_SLOTS  = 20;
 
+// "100 BV Sorteo": mismo pool de registros que el Top 80 (misma tabla,
+// mismo cycle_id) — solo se reagrupan por mes calendario. Un mes califica
+// al sorteo si el usuario acumuló >= 100 BV en ese mes.
+const QUALIFY_BV_SORTEO = 100;
+
+// Lista de meses YYYY-MM entre dos fechas ISO, inclusive.
+function monthsBetween(startIso, endIso) {
+  const months = [];
+  let [y, m] = startIso.split('-').map(Number);
+  const [ey, em] = endIso.split('-').map(Number);
+  while (y < ey || (y === ey && m <= em)) {
+    months.push(`${y}-${String(m).padStart(2, '0')}`);
+    m += 1;
+    if (m > 12) { m = 1; y += 1; }
+  }
+  return months;
+}
+
 // Safety-net: garantiza que las tablas, la columna `name` y la campaña vigente
 // existan en producción sin depender de correr las migraciones 016/019 a mano.
 // Idempotente.
@@ -32,6 +50,7 @@ const QUALIFY_SLOTS  = 20;
         user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         cycle_id      INTEGER NOT NULL REFERENCES promotion_cycles(id) ON DELETE CASCADE,
         bv_personal   INTEGER NOT NULL,
+        bv_type       TEXT    NOT NULL DEFAULT 'general',
         order_number  TEXT    NOT NULL,
         date          TEXT    NOT NULL,
         created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
@@ -45,6 +64,11 @@ const QUALIFY_SLOTS  = 20;
     if (!hasName) {
       db.exec(`ALTER TABLE promotion_cycles ADD COLUMN name TEXT`);
       db.prepare(`UPDATE promotion_cycles SET name = 'Ciclo BV mensual' WHERE name IS NULL`).run();
+    }
+
+    const hasBvType = db.prepare(`PRAGMA table_info(promotions)`).all().some((c) => c.name === 'bv_type');
+    if (!hasBvType) {
+      db.exec(`ALTER TABLE promotions ADD COLUMN bv_type TEXT NOT NULL DEFAULT 'general'`);
     }
 
     let cycle = db.prepare('SELECT * FROM promotion_cycles WHERE name = ?').get(PROMO_NAME);
@@ -72,7 +96,7 @@ function canManagePromotions(actor, targetSystemId) {
 }
 
 // Eliminar es más amplio que editar: el líder de módulo también puede borrar
-// registros de puntos de los usuarios de SU módulo.
+// registros de BV de los usuarios de SU módulo.
 function canDeletePromotion(actor, target) {
   if (canManagePromotions(actor, target.system_id)) return true;
   if (actor.role === 'module_leader') {
@@ -101,8 +125,8 @@ router.get('/', requireAuth, (req, res) => {
   if (!cycle) return res.json({ cycle: null, top: [], my: [], qualify_slots: QUALIFY_SLOTS, qualify_cutoff: null });
 
   // Compiten TODOS los usuarios de la plataforma: se parte de `users` con LEFT
-  // JOIN, así quien aún no registra puntos aparece en 0 y ve cuánto le falta.
-  // Los puntos son acumulativos, por eso cada usuario aparece una sola vez.
+  // JOIN, así quien aún no registra BV aparece en 0 y ve cuánto le falta.
+  // El BV es acumulativo, por eso cada usuario aparece una sola vez.
   const top = db.prepare(`
     SELECT
       u.id       AS user_id,
@@ -132,13 +156,58 @@ router.get('/', requireAuth, (req, res) => {
   res.json({ cycle, top, my, qualify_slots: QUALIFY_SLOTS, qualify_cutoff });
 });
 
+// GET /api/promotions/sorteo — "100 BV Sorteo": para CADA usuario de la
+// plataforma (no solo el Top 80), su BV agrupado por mes calendario dentro
+// de la campaña vigente, y si ese mes calificó (>= 100 BV). Mismo pool de
+// registros que el Top 80 — un registro cuenta para ambas vistas a la vez.
+router.get('/sorteo', requireAuth, (req, res) => {
+  const cycle = getCurrentCycle();
+  if (!cycle) return res.json({ cycle: null, months: [], users: [], qualify_bv: QUALIFY_BV_SORTEO });
+
+  const months = monthsBetween(cycle.start_date, cycle.end_date);
+
+  const rows = db.prepare(`
+    SELECT p.user_id, strftime('%Y-%m', p.date) AS ym, SUM(p.bv_personal) AS bv
+    FROM promotions p
+    WHERE p.cycle_id = ?
+    GROUP BY p.user_id, ym
+  `).all(cycle.id);
+
+  const byUser = new Map();
+  for (const r of rows) {
+    if (!byUser.has(r.user_id)) byUser.set(r.user_id, {});
+    byUser.get(r.user_id)[r.ym] = r.bv;
+  }
+
+  const allUsers = db.prepare(`
+    SELECT id, full_name FROM users WHERE blocked = 0 ORDER BY full_name ASC
+  `).all();
+
+  const users = allUsers.map((u) => {
+    const monthly = byUser.get(u.id) || {};
+    const monthsData = months.map((ym) => {
+      const bv = monthly[ym] || 0;
+      return { ym, bv, qualified: bv >= QUALIFY_BV_SORTEO };
+    });
+    return {
+      user_id: u.id,
+      full_name: u.full_name,
+      months: monthsData,
+      qualified_count: monthsData.filter((m) => m.qualified).length,
+    };
+  });
+
+  res.json({ cycle, months, users, qualify_bv: QUALIFY_BV_SORTEO });
+});
+
 // POST /api/promotions — registrar BV/orden/fecha. Por defecto para el usuario
 // autenticado; si se envía user_id de otro usuario, requiere que el actor sea
 // system_leader (mismo sistema) o lider_supremo.
 router.post('/', requireAuth, (req, res) => {
-  const { bv_personal, order_number, date, user_id, confirm_duplicate } = req.body || {};
+  const { bv_personal, order_number, date, user_id, confirm_duplicate, bv_type } = req.body || {};
   const bv = parseInt(bv_personal, 10);
-  if (!Number.isFinite(bv) || bv < 0) return res.status(400).json({ error: 'BV Personal inválido' });
+  if (!Number.isFinite(bv) || bv < 0) return res.status(400).json({ error: 'BV inválido' });
+  const type = bv_type === 'personal' ? 'personal' : 'general';
   const order = String(order_number || '').trim();
   if (!order) return res.status(400).json({ error: '# de Orden requerido' });
   if (!date) return res.status(400).json({ error: 'Fecha requerida' });
@@ -159,28 +228,31 @@ router.post('/', requireAuth, (req, res) => {
     return res.status(400).json({ error: `La fecha debe estar entre ${cycle.start_date} y ${cycle.end_date}` });
   }
 
-  // Anti-duplicado: si el último registro de la campaña para este usuario tiene
-  // exactamente el mismo puntaje, se pide confirmación explícita antes de sumar.
+  // Anti-duplicado: si el último registro de este MISMO tipo (general o
+  // personal) para este usuario tiene exactamente el mismo BV, se pide
+  // confirmación explícita antes de sumar. Se compara solo dentro del mismo
+  // tipo — un BV general no bloquea un BV Personal con el mismo valor.
   if (!confirm_duplicate) {
     const last = db.prepare(`
       SELECT bv_personal, order_number, date FROM promotions
-      WHERE cycle_id = ? AND user_id = ?
+      WHERE cycle_id = ? AND user_id = ? AND bv_type = ?
       ORDER BY id DESC LIMIT 1
-    `).get(cycle.id, targetUserId);
+    `).get(cycle.id, targetUserId, type);
     if (last && last.bv_personal === bv) {
+      const typeLabel = type === 'personal' ? 'BV Personal' : 'BV';
       return res.status(409).json({
         duplicate: true,
         bv_personal: bv,
         last,
-        error: `¿Seguro que quieres agregar ${bv} puntos de nuevo? Ya registraste este mismo valor.`,
+        error: `¿Seguro que quieres agregar ${bv} ${typeLabel} de nuevo? Ya registraste este mismo valor.`,
       });
     }
   }
 
   const info = db.prepare(`
-    INSERT INTO promotions (user_id, cycle_id, bv_personal, order_number, date)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(targetUserId, cycle.id, bv, order, date);
+    INSERT INTO promotions (user_id, cycle_id, bv_personal, bv_type, order_number, date)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(targetUserId, cycle.id, bv, type, order, date);
 
   res.status(201).json({
     id: info.lastInsertRowid,
@@ -204,7 +276,7 @@ router.get('/user/:userId', requireAuth, (req, res) => {
   if (!cycle) return res.json({ user, cycle: null, records: [], total: 0 });
 
   const records = db.prepare(`
-    SELECT id, bv_personal, order_number, date, created_at
+    SELECT id, bv_personal, bv_type, order_number, date, created_at
     FROM promotions
     WHERE user_id = ? AND cycle_id = ?
     ORDER BY created_at DESC
@@ -244,12 +316,15 @@ router.patch('/:id', requireAuth, (req, res) => {
     return res.status(403).json({ error: 'No tienes permiso para editar este registro' });
   }
 
-  const { bv_personal, order_number, date } = req.body || {};
+  const { bv_personal, bv_type, order_number, date } = req.body || {};
   const fields = [], values = [];
   if (bv_personal !== undefined) {
     const bv = parseInt(bv_personal, 10);
-    if (!Number.isFinite(bv) || bv < 0) return res.status(400).json({ error: 'BV Personal inválido' });
+    if (!Number.isFinite(bv) || bv < 0) return res.status(400).json({ error: 'BV inválido' });
     fields.push('bv_personal = ?'); values.push(bv);
+  }
+  if (bv_type !== undefined) {
+    fields.push('bv_type = ?'); values.push(bv_type === 'personal' ? 'personal' : 'general');
   }
   if (order_number !== undefined) {
     const order = String(order_number).trim();
@@ -269,11 +344,11 @@ router.patch('/:id', requireAuth, (req, res) => {
   db.prepare(`UPDATE promotions SET ${fields.join(', ')} WHERE id = ?`).run(...values);
   res.json({
     ok: true,
-    record: db.prepare('SELECT id, user_id, bv_personal, order_number, date, created_at FROM promotions WHERE id = ?').get(req.params.id),
+    record: db.prepare('SELECT id, user_id, bv_personal, bv_type, order_number, date, created_at FROM promotions WHERE id = ?').get(req.params.id),
   });
 });
 
-// DELETE /api/promotions/:id — eliminar un registro de puntos.
+// DELETE /api/promotions/:id — eliminar un registro de BV.
 // lider_supremo: cualquiera. system_leader: su sistema. module_leader: su módulo.
 router.delete('/:id', requireAuth, (req, res) => {
   const record = db.prepare(`

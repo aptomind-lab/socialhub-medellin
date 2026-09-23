@@ -227,8 +227,8 @@
 
       const rows = data.top || [];
       const canViewHistory = ['module_leader', 'system_leader', 'lider_supremo'].includes(me.role);
-      // Corte de calificación: puntaje del puesto 20. Del 21 en adelante se muestra
-      // cuántos puntos faltan para alcanzarlo.
+      // Corte de calificación: BV del puesto 20. Del 21 en adelante se muestra
+      // cuánto BV falta para alcanzarlo.
       const slots  = data.qualify_slots || 20;
       const cutoff = data.qualify_cutoff;
       $('promo-top').innerHTML = rows.length
@@ -241,7 +241,7 @@
               ? '<span class="muted">—</span>'
               : (missing === 0
                   ? '<span class="promo-gap">empate con el puesto 20</span>'
-                  : `<span class="promo-gap">faltan <strong>${missing}</strong> pts</span>`);
+                  : `<span class="promo-gap">faltan <strong>${missing}</strong> BV</span>`);
             const isMe = r.user_id === me.id;
             const bvCell = canViewHistory
               ? `<strong class="promo-bv-link" data-user-id="${r.user_id}" data-name="${r.full_name.replace(/"/g, '&quot;')}" title="Ver historial de registros" style="color:var(--gold-400);cursor:pointer;text-decoration:underline dotted;">${r.bv_personal}</strong>`
@@ -264,7 +264,7 @@
       const mine = data.my || [];
       if (mine.length) {
         const totalBV = mine.reduce((s, r) => s + (r.bv_personal || 0), 0);
-        $('promo-mine').textContent = `Ya registraste ${mine.length} orden(es) en esta promoción · Total puntos: ${totalBV}.`;
+        $('promo-mine').textContent = `Ya registraste ${mine.length} orden(es) en esta promoción · Total BV: ${totalBV}.`;
       } else {
         $('promo-mine').textContent = '';
       }
@@ -279,7 +279,7 @@
   }
 
   // Eliminar es más amplio que editar: el líder de módulo también puede borrar
-  // registros de puntos de los usuarios de SU módulo.
+  // registros de BV de los usuarios de SU módulo.
   function canDeletePromoRecords(user) {
     if (canManagePromoRecords(user?.system_id)) return true;
     if (me.role === 'module_leader') {
@@ -288,8 +288,8 @@
     return false;
   }
 
-  // Envía un registro de puntos. Si el backend responde 409 duplicate (mismo
-  // puntaje que el registro anterior), pide confirmación y reintenta.
+  // Envía un registro de BV. Si el backend responde 409 duplicate (mismo
+  // valor que el registro anterior), pide confirmación y reintenta.
   async function submitPromoRecord(payload) {
     try {
       return await api('/api/promotions', { method: 'POST', body: JSON.stringify(payload) });
@@ -305,6 +305,27 @@
     }
   }
 
+  // Un solo formulario puede cargar BV general y BV Personal a la vez, para
+  // la misma orden/fecha — se guardan como dos registros independientes
+  // (bv_type distinto), cada uno con su propia validación de duplicado.
+  // Al menos uno de los dos montos debe venir > 0.
+  async function submitPromoEntries({ user_id, bvGeneral, bvPersonal, order_number, date }) {
+    if (!(bvGeneral > 0) && !(bvPersonal > 0)) {
+      alert('Ingresa un valor en BV o en BV Personal.');
+      return false;
+    }
+    let savedAny = false;
+    if (bvGeneral > 0) {
+      const saved = await submitPromoRecord({ user_id, bv_personal: bvGeneral, bv_type: 'general', order_number, date });
+      if (saved) savedAny = true;
+    }
+    if (bvPersonal > 0) {
+      const saved = await submitPromoRecord({ user_id, bv_personal: bvPersonal, bv_type: 'personal', order_number, date });
+      if (saved) savedAny = true;
+    }
+    return savedAny;
+  }
+
   async function openPromoHistoryModal(userId, userName) {
     openModal(`Historial · ${userName}`, '<div class="muted">Cargando…</div>');
     try {
@@ -317,8 +338,9 @@
       const hasActions = canManage || canDelete;
 
       const addFormHtml = canManage ? `
-        <form id="promo-add-form" class="form-row form-row--quad" style="margin-bottom:16px;">
-          <div class="field"><label>Puntos</label><input type="number" min="0" id="pa-bv" required placeholder="0" /></div>
+        <form id="promo-add-form" class="form-row form-row--penta" style="margin-bottom:16px;">
+          <div class="field"><label>BV</label><input type="number" min="0" id="pa-bv" placeholder="0" /></div>
+          <div class="field"><label>BV Personal</label><input type="number" min="0" id="pa-bv-personal" placeholder="0" /></div>
           <div class="field"><label># de Orden</label><input type="text" id="pa-order" required placeholder="Ej. 12345" /></div>
           <div class="field"><label>Fecha</label><input type="date" id="pa-date" min="${cycleFrom}" max="${cycleTo}" required /></div>
           <button class="primary sm" type="submit">Agregar</button>
@@ -328,7 +350,7 @@
       const summaryHtml = r.cycle ? `
         <div style="margin-bottom:12px;">
           <div class="muted" style="font-size:12px;">${r.cycle.name || 'Promoción'} · ${cycleFrom} → ${cycleTo}</div>
-          <div style="margin-top:4px;">Total puntos: <strong style="color:var(--gold-400);">${r.total}</strong> · ${r.records.length} orden(es)</div>
+          <div style="margin-top:4px;">Total BV: <strong style="color:var(--gold-400);">${r.total}</strong> · ${r.records.length} orden(es)</div>
         </div>` : '';
 
       const rowsHtml = (r.records || []).map((rec) => `
@@ -336,6 +358,7 @@
           <td>${rec.date}</td>
           <td>${rec.order_number}</td>
           <td><strong style="color:var(--gold-400);">${rec.bv_personal}</strong></td>
+          <td>${rec.bv_type === 'personal' ? '<span class="tag personal">BV Personal</span>' : '<span class="tag gray">General</span>'}</td>
           <td class="muted" style="font-size:11px;">${fmtLocal(rec.created_at)}</td>
           ${hasActions ? `<td style="white-space:nowrap;">
             ${canManage ? `<button class="ghost-btn sm" data-action="edit-promo" data-id="${rec.id}">Editar</button>` : ''}
@@ -346,7 +369,7 @@
 
       const tableHtml = (r.records && r.records.length)
         ? `<div class="table-wrap"><table class="table">
-            <thead><tr><th>Fecha</th><th># Orden</th><th>Puntos</th><th>Registrado</th>${hasActions ? '<th></th>' : ''}</tr></thead>
+            <thead><tr><th>Fecha</th><th># Orden</th><th>BV</th><th>Tipo</th><th>Registrado</th>${hasActions ? '<th></th>' : ''}</tr></thead>
             <tbody>${rowsHtml}</tbody>
           </table></div>`
         : '<div class="muted">Sin registros en esta promoción.</div>';
@@ -366,15 +389,17 @@
           addForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             try {
-              const saved = await submitPromoRecord({
+              const saved = await submitPromoEntries({
                 user_id: userId,
-                bv_personal: parseInt($('pa-bv').value, 10) || 0,
+                bvGeneral: parseInt($('pa-bv').value, 10) || 0,
+                bvPersonal: parseInt($('pa-bv-personal').value, 10) || 0,
                 order_number: $('pa-order').value.trim(),
                 date: $('pa-date').value,
               });
               if (!saved) return;
               openPromoHistoryModal(userId, userName);
               loadPromotions();
+              invalidateSorteo();
             } catch (err) { alert(err.message); }
           });
         }
@@ -389,11 +414,12 @@
       if (canDelete) {
         $('modal-body').querySelectorAll('[data-action=delete-promo]').forEach((b) => {
           b.addEventListener('click', async () => {
-            if (!confirm('¿Eliminar este registro de puntos?')) return;
+            if (!confirm('¿Eliminar este registro de BV?')) return;
             try {
               await api(`/api/promotions/${b.dataset.id}`, { method: 'DELETE' });
               openPromoHistoryModal(userId, userName);
               loadPromotions();
+              invalidateSorteo();
             } catch (err) { alert(err.message); }
           });
         });
@@ -404,8 +430,15 @@
   }
 
   function openPromoRecordEditor(rec, userId, userName) {
-    openModal('Editar registro de puntos', `
-      <div class="field"><label>Puntos</label><input type="number" min="0" id="pe-bv" value="${rec.bv_personal}" required /></div>
+    const type = rec.bv_type === 'personal' ? 'personal' : 'general';
+    openModal('Editar registro de BV', `
+      <div class="field"><label>BV</label><input type="number" min="0" id="pe-bv" value="${rec.bv_personal}" required /></div>
+      <div class="field"><label>Tipo</label>
+        <select id="pe-type">
+          <option value="general" ${type === 'general' ? 'selected' : ''}>General</option>
+          <option value="personal" ${type === 'personal' ? 'selected' : ''}>BV Personal</option>
+        </select>
+      </div>
       <div class="field"><label># de Orden</label><input type="text" id="pe-order" value="${String(rec.order_number).replace(/"/g, '&quot;')}" required /></div>
       <div class="field"><label>Fecha</label><input type="date" id="pe-date" value="${rec.date}" required /></div>
       <div style="display:flex;gap:10px;margin-top:14px;">
@@ -420,12 +453,14 @@
           method: 'PATCH',
           body: JSON.stringify({
             bv_personal: parseInt($('pe-bv').value, 10),
+            bv_type: $('pe-type').value,
             order_number: $('pe-order').value.trim(),
             date: $('pe-date').value,
           }),
         });
         openPromoHistoryModal(userId, userName);
         loadPromotions();
+        invalidateSorteo();
       } catch (err) { alert(err.message); }
     });
   }
@@ -434,18 +469,100 @@
     $('promo-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       try {
-        const saved = await submitPromoRecord({
-          bv_personal: parseInt($('promo-bv').value, 10) || 0,
+        const saved = await submitPromoEntries({
+          bvGeneral: parseInt($('promo-bv').value, 10) || 0,
+          bvPersonal: parseInt($('promo-bv-personal').value, 10) || 0,
           order_number: $('promo-order').value.trim(),
           date: $('promo-date').value,
         });
         if (!saved) return;
         $('promo-bv').value = '';
+        $('promo-bv-personal').value = '';
         $('promo-order').value = '';
         loadPromotions();
+        invalidateSorteo();
       } catch (err) { alert(err.message); }
     });
   }
+
+  // ============ PROMOCIONES — pestaña "100 BV Sorteo" ============
+  // Mismo pool de registros que el Top 80 (misma tabla, mismo cycle_id) —
+  // acá solo se reagrupan por mes calendario. Un mes califica al sorteo si
+  // el usuario acumuló >= 100 BV en ese mes. Participan TODOS los usuarios,
+  // no solo el Top 80.
+  const MONTH_LABELS = { '01':'Ene','02':'Feb','03':'Mar','04':'Abr','05':'May','06':'Jun','07':'Jul','08':'Ago','09':'Sep','10':'Oct','11':'Nov','12':'Dic' };
+  let sorteoData = null;
+
+  // Un registro de BV nuevo/editado/borrado puede cambiar la calificación
+  // mensual de un usuario. Si la pestaña sorteo está visible, refresca de
+  // una vez; si no, solo invalida el cache para que recargue al abrirla.
+  function invalidateSorteo() {
+    sorteoData = null;
+    const panel = document.querySelector('.promo-tab-panel[data-promo-panel="sorteo"]');
+    if (panel && !panel.hidden) loadPromoSorteo();
+  }
+
+  function monthShortLabel(ym) {
+    const [, m] = ym.split('-');
+    return MONTH_LABELS[m] || ym;
+  }
+
+  function renderPromoSorteo(filterText) {
+    if (!sorteoData) return;
+    const { months, users } = sorteoData;
+    const head = $('promo-sorteo-head');
+    if (head) {
+      head.innerHTML = `<th>Nombre</th>${months.map((ym) => `<th class="sorteo-month-th">${monthShortLabel(ym)}</th>`).join('')}<th>Calificados</th>`;
+    }
+    const q = (filterText || '').trim().toLowerCase();
+    const rows = q ? users.filter((u) => u.full_name.toLowerCase().includes(q)) : users;
+    const canViewHistory = ['module_leader', 'system_leader', 'lider_supremo'].includes(me.role);
+
+    $('promo-sorteo-body').innerHTML = rows.length
+      ? rows.map((u) => {
+          const isMe = u.user_id === me.id;
+          const nameCell = canViewHistory
+            ? `<span class="promo-bv-link" data-user-id="${u.user_id}" data-name="${u.full_name.replace(/"/g, '&quot;')}" title="Ver historial de registros" style="cursor:pointer;text-decoration:underline dotted;">${u.full_name}</span>`
+            : u.full_name;
+          const checks = u.months.map((m) =>
+            `<td style="text-align:center;"><span class="sorteo-check${m.qualified ? ' qualified' : ''}" title="${monthShortLabel(m.ym)}: ${m.bv} BV">${m.qualified ? '✓' : ''}</span></td>`
+          ).join('');
+          return `<tr${isMe ? ' style="background:rgba(201,162,74,0.08);"' : ''}>
+            <td>${nameCell}${isMe ? ' <span class="muted" style="font-size:11px;">(yo)</span>' : ''}</td>
+            ${checks}
+            <td class="sorteo-count"><strong>${u.qualified_count}</strong>/${months.length}</td>
+          </tr>`;
+        }).join('')
+      : `<tr><td colspan="${months.length + 2}" class="muted">Sin usuarios que coincidan.</td></tr>`;
+
+    $('promo-sorteo-body').querySelectorAll('.promo-bv-link').forEach((el) => {
+      el.addEventListener('click', () => openPromoHistoryModal(el.dataset.userId, el.dataset.name));
+    });
+  }
+
+  async function loadPromoSorteo() {
+    try {
+      sorteoData = await api('/api/promotions/sorteo');
+      const hint = $('promo-sorteo-hint');
+      if (hint && sorteoData.qualify_bv != null) {
+        hint.textContent = `Alcanza ${sorteoData.qualify_bv} BV en un mes calendario para calificar ese mes.`;
+      }
+      renderPromoSorteo($('promo-sorteo-search') ? $('promo-sorteo-search').value : '');
+    } catch (err) { handleErr(err); }
+  }
+
+  if ($('promo-sorteo-search')) {
+    $('promo-sorteo-search').addEventListener('input', (e) => renderPromoSorteo(e.target.value));
+  }
+
+  document.querySelectorAll('.tab-btn[data-promo-tab]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const tab = btn.dataset.promoTab;
+      document.querySelectorAll('.tab-btn[data-promo-tab]').forEach((b) => b.classList.toggle('active', b === btn));
+      document.querySelectorAll('.promo-tab-panel').forEach((p) => { p.hidden = p.dataset.promoPanel !== tab; });
+      if (tab === 'sorteo' && !sorteoData) loadPromoSorteo();
+    });
+  });
 
   // ============ TOP 10 LATAM ============
   async function loadLatam() {

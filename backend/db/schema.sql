@@ -227,11 +227,15 @@ CREATE TABLE IF NOT EXISTS promotion_cycles (
   created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
+-- bv_type: 'general' (BV por defecto) | 'personal' (BV Personal). Ambos suman
+-- al mismo pool (Top 80 y 100 BV Sorteo no filtran por tipo) — el campo solo
+-- existe para distinguirlos visualmente en el historial del usuario.
 CREATE TABLE IF NOT EXISTS promotions (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   cycle_id      INTEGER NOT NULL REFERENCES promotion_cycles(id) ON DELETE CASCADE,
   bv_personal   INTEGER NOT NULL,
+  bv_type       TEXT    NOT NULL DEFAULT 'general',
   order_number  TEXT    NOT NULL,
   date          TEXT    NOT NULL,
   created_at    TEXT    NOT NULL DEFAULT (datetime('now'))

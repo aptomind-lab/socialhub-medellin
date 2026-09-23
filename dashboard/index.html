@@ -165,27 +165,49 @@
         </div>
         <div class="promo-quote">Los ganadores ganan porque no lo pueden evitar, es parte de su identidad</div>
 
-        <article class="panel">
-          <header class="panel-head">
-            <h3>Registrar puntos</h3>
-            <span class="muted" id="promo-cycle-range" style="font-size:12px;">—</span>
-          </header>
-          <form id="promo-form" class="form-row form-row--quad">
-            <div class="field"><label>Puntos</label><input type="number" inputmode="numeric" id="promo-bv" min="0" required placeholder="0" /></div>
-            <div class="field"><label># de Orden</label><input type="text" id="promo-order" required placeholder="Ej. 12345" /></div>
-            <div class="field"><label>Fecha</label><input type="date" id="promo-date" required /></div>
-            <button class="primary sm" type="submit">Guardar</button>
-          </form>
-          <div class="hint" id="promo-mine"></div>
-        </article>
+        <div class="tab-bar" role="tablist">
+          <button type="button" class="tab-btn active" data-promo-tab="top80" role="tab">Top 80</button>
+          <button type="button" class="tab-btn" data-promo-tab="sorteo" role="tab">100 BV Sorteo</button>
+        </div>
 
-        <article class="panel">
-          <header class="panel-head"><h3>Top 80 · LIFE STYLE DAY CARTAGENA</h3></header>
-          <div class="table-wrap"><table class="table">
-            <thead><tr><th>#</th><th>Estado</th><th>Nombre</th><th>Órdenes</th><th>Puntos</th><th>Faltan para Top 20</th><th>Última fecha</th></tr></thead>
-            <tbody id="promo-top"></tbody>
-          </table></div>
-        </article>
+        <div class="promo-tab-panel" data-promo-panel="top80">
+          <article class="panel">
+            <header class="panel-head">
+              <h3>Registrar BV</h3>
+              <span class="muted" id="promo-cycle-range" style="font-size:12px;">—</span>
+            </header>
+            <form id="promo-form" class="form-row form-row--penta">
+              <div class="field"><label>BV</label><input type="number" inputmode="numeric" id="promo-bv" min="0" placeholder="0" /></div>
+              <div class="field"><label>BV Personal</label><input type="number" inputmode="numeric" id="promo-bv-personal" min="0" placeholder="0" /></div>
+              <div class="field"><label># de Orden</label><input type="text" id="promo-order" required placeholder="Ej. 12345" /></div>
+              <div class="field"><label>Fecha</label><input type="date" id="promo-date" required /></div>
+              <button class="primary sm" type="submit">Guardar</button>
+            </form>
+            <div class="hint" id="promo-mine"></div>
+          </article>
+
+          <article class="panel">
+            <header class="panel-head"><h3>Top 80 · LIFE STYLE DAY CARTAGENA</h3></header>
+            <div class="table-wrap"><table class="table">
+              <thead><tr><th>#</th><th>Estado</th><th>Nombre</th><th>Órdenes</th><th>BV</th><th>Faltan para Top 20</th><th>Última fecha</th></tr></thead>
+              <tbody id="promo-top"></tbody>
+            </table></div>
+          </article>
+        </div>
+
+        <div class="promo-tab-panel" data-promo-panel="sorteo" hidden>
+          <article class="panel">
+            <header class="panel-head">
+              <h3>100 BV Sorteo</h3>
+              <span class="muted" id="promo-sorteo-hint" style="font-size:12px;">Alcanza 100 BV en un mes calendario para calificar ese mes.</span>
+            </header>
+            <input type="text" id="promo-sorteo-search" class="search" placeholder="Buscar por nombre..." style="margin-bottom:14px;" />
+            <div class="table-wrap"><table class="table">
+              <thead><tr id="promo-sorteo-head"><th>Nombre</th></tr></thead>
+              <tbody id="promo-sorteo-body"></tbody>
+            </table></div>
+          </article>
+        </div>
       </section>
 
       <!-- OVERVIEW -->
