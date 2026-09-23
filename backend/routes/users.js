@@ -255,6 +255,15 @@ router.patch('/:id', requireAuth, (req, res) => {
     fields.push('system_id = ?'); values.push(system_id || null);
   }
   if (module_id !== undefined && ['lider_supremo','system_leader'].includes(req.user.role)) {
+    // Blindaje: un rol que requiere módulo (module_leader/productive_leader/
+    // distributor) nunca puede quedar sin uno vía PATCH — mismo criterio que
+    // al crear el usuario. Evita que un bug de frontend (o una llamada directa
+    // a la API) borre el módulo en silencio; hay que mandar uno válido.
+    const effectiveRole = role !== undefined ? role : target.role;
+    const needsModule = ['module_leader', 'productive_leader', 'distributor'].includes(effectiveRole);
+    if (needsModule && !module_id) {
+      return res.status(400).json({ error: 'Este rol requiere módulo — no se puede dejar sin asignar' });
+    }
     fields.push('module_id = ?'); values.push(module_id || null);
   }
   if (productive_leader_id !== undefined) { fields.push('productive_leader_id = ?'); values.push(productive_leader_id || null); }

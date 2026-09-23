@@ -1699,20 +1699,28 @@
       <p class="hint" style="margin: 0 0 14px;">Cambios manuales — usa con cuidado. Mover entre sistemas/módulos rompe relaciones con su downline.</p>
       <button class="primary" id="eu-save">Guardar cambios</button>
     `);
+    // Blindaje: si el admin no toca un select, NO se manda ese campo en el
+    // PATCH — evita borrar en silencio system_id/module_id/productive_leader_id
+    // cuando el <option> correcto no estaba en la lista al abrir el modal (fue
+    // la causa raíz sospechada de que ~675 usuarios quedaran sin módulo).
+    // El backend ya trata "campo ausente" como "no tocar" — el bug era que el
+    // frontend mandaba los tres siempre, incluso sin interacción real.
+    const touched = { module: false, system: false, pl: false };
+    $('eu-module').addEventListener('change', () => { touched.module = true; });
+    $('eu-system').addEventListener('change', () => { touched.system = true; });
+    $('eu-pl').addEventListener('change', () => { touched.pl = true; });
     $('eu-save').addEventListener('click', async () => {
       try {
-        await api(`/api/users/${u.id}`, {
-          method: 'PATCH',
-          body: JSON.stringify({
-            full_name: $('eu-name').value.trim(),
-            email: $('eu-email').value.trim() || null,
-            phone: $('eu-phone').value.trim() || null,
-            role: $('eu-role').value,
-            system_id: parseInt($('eu-system').value, 10) || null,
-            module_id: parseInt($('eu-module').value, 10) || null,
-            productive_leader_id: parseInt($('eu-pl').value, 10) || null,
-          }),
-        });
+        const body = {
+          full_name: $('eu-name').value.trim(),
+          email: $('eu-email').value.trim() || null,
+          phone: $('eu-phone').value.trim() || null,
+          role: $('eu-role').value,
+        };
+        if (touched.system) body.system_id = parseInt($('eu-system').value, 10) || null;
+        if (touched.module) body.module_id = parseInt($('eu-module').value, 10) || null;
+        if (touched.pl)     body.productive_leader_id = parseInt($('eu-pl').value, 10) || null;
+        await api(`/api/users/${u.id}`, { method: 'PATCH', body: JSON.stringify(body) });
         closeModal(); loadUsers();
       } catch (e) { alert(e.message); }
     });
