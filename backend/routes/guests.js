@@ -202,7 +202,13 @@ router.get('/', requireAuth, (req, res) => {
                    ORDER BY sh.scanned_at DESC LIMIT 1) = ?`;
     params.push(boleto_sub);
   }
-  sql += ' ORDER BY last_scan_at DESC NULLS LAST, g.created_at DESC LIMIT 500';
+  // LIMIT existe desde el commit inicial de la plataforma. Con ~25k invitados
+  // y varios cientos de registros/escaneos por día, 500 alcanzaba a cubrir
+  // apenas el día en curso — todo lo más viejo quedaba fuera de la vista sin
+  // filtrar. Se sube a 5000 para restaurar visibilidad histórica; la
+  // solución correcta a largo plazo es paginación real en vez de un LIMIT
+  // fijo, pendiente como mejora aparte.
+  sql += ' ORDER BY last_scan_at DESC NULLS LAST, g.created_at DESC LIMIT 5000';
   res.json({ guests: db.prepare(sql).all(...params) });
 });
 
