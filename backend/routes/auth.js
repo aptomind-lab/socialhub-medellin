@@ -32,6 +32,32 @@ router.post('/login', (req, res) => {
   });
 });
 
+// Auto-login de un solo uso: consume el token del link "Ingresar a la
+// plataforma" del correo de bienvenida y devuelve una sesión normal, igual
+// que /login. El propio boot() del frontend ya redirige a onboarding cuando
+// profile_completed=0 — no hace falta lógica especial más allá de autenticar.
+router.post('/token-login', (req, res) => {
+  const { token } = req.body || {};
+  if (!token) return res.status(400).json({ error: 'Token requerido' });
+
+  const rec = db.prepare('SELECT * FROM login_tokens WHERE token = ?').get(token);
+  if (!rec) return res.status(400).json({ error: 'Link inválido o ya usado' });
+  if (rec.used_at) return res.status(400).json({ error: 'Este link ya fue usado' });
+  if (new Date(rec.expires_at).getTime() < Date.now()) {
+    return res.status(400).json({ error: 'Este link expiró' });
+  }
+
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(rec.user_id);
+  if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+  db.prepare(`UPDATE login_tokens SET used_at = datetime('now') WHERE id = ?`).run(rec.id);
+
+  res.json({
+    token: signToken(user),
+    user: publicUser(user),
+  });
+});
+
 router.get('/me', requireAuth, (req, res) => {
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
   res.json({ user: publicUser(user) });

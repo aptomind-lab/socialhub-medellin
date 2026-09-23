@@ -1,5 +1,6 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const { customAlphabet } = require('nanoid');
 const db = require('../db');
 const { requireAuth, requireRole, scopeUsersClause } = require('../middleware/auth');
@@ -153,16 +154,31 @@ router.post('/', requireAuth, async (req, res) => {
     console.error(err); return res.status(500).json({ error: 'Error al crear usuario' });
   }
 
-  // Enviar email (no bloqueante: si SMTP no configurado, devolvemos pwd en respuesta)
-  let emailResult = { skipped: true };
+  // Link de auto-login de un solo uso (24h) — el usuario entra directo desde
+  // el correo, sin escribir código+contraseña. Se genera ANTES del envío:
+  // si el correo falla (SMTP caído, cuota agotada, etc.) el link sigue
+  // siendo válido y el admin puede pasarlo a mano como respaldo.
+  const loginToken = crypto.randomBytes(24).toString('hex');
+  const loginExpires = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+  db.prepare(`
+    INSERT INTO login_tokens (user_id, token, expires_at) VALUES (?, ?, ?)
+  `).run(newId, loginToken, loginExpires);
+  const baseUrl = process.env.PUBLIC_BASE_URL || 'http://localhost:4000';
+  const loginUrl = `${baseUrl}/dashboard/index.html#login=${loginToken}`;
+
+  // Enviar email (no bloqueante: si falla — SMTP no configurado, cuota
+  // agotada, etc. — devolvemos pwd + link en la respuesta para entrega manual).
+  let emailSent = false;
   try {
-    emailResult = await sendWelcomeEmail({
+    const result = await sendWelcomeEmail({
       to: cleanEmail,
       distributorCode: code,
       password: tempPwd,
       roleLabel: ROLE_LABELS[role],
       rank: bhip_rank,
+      loginUrl,
     });
+    emailSent = !result.skipped;
   } catch (err) {
     console.error('[users/welcome-email]', err.message);
   }
@@ -170,9 +186,9 @@ router.post('/', requireAuth, async (req, res) => {
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(newId);
   res.status(201).json({
     user: decorate(user),
-    initial_password: emailResult.skipped ? tempPwd : undefined, // solo si no se pudo enviar email
-    email_sent: !emailResult.skipped,
-    login_url: emailResult.login_url,
+    initial_password: emailSent ? undefined : tempPwd, // solo si no se pudo enviar email
+    email_sent: emailSent,
+    login_url: loginUrl,
     warnings: warnings.length ? warnings : undefined,
   });
 });

@@ -130,6 +130,21 @@ CREATE TABLE IF NOT EXISTS password_resets (
 CREATE INDEX IF NOT EXISTS idx_pwreset_token ON password_resets(token);
 CREATE INDEX IF NOT EXISTS idx_pwreset_user  ON password_resets(user_id);
 
+-- Token de un solo uso para el link "Ingresar a la plataforma" del correo de
+-- bienvenida: el usuario nuevo entra directo, sin escribir código+contraseña.
+-- El propio flujo de onboarding existente (profile_completed=0) lo recibe
+-- después del auto-login, igual que si hubiera iniciado sesión a mano.
+CREATE TABLE IF NOT EXISTS login_tokens (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token       TEXT    NOT NULL UNIQUE,
+  expires_at  TEXT    NOT NULL,
+  used_at     TEXT,
+  created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_logintoken_token ON login_tokens(token);
+CREATE INDEX IF NOT EXISTS idx_logintoken_user  ON login_tokens(user_id);
+
 CREATE INDEX IF NOT EXISTS idx_msgs_user ON daily_messages(user_id);
 CREATE INDEX IF NOT EXISTS idx_msgs_date ON daily_messages(date);
 

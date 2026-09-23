@@ -219,10 +219,9 @@ async function sendQrEmail({ to, guestName, qrBuffer }) {
   });
 }
 
-async function sendWelcomeEmail({ to, distributorCode, password, roleLabel, rank }) {
-  const loginUrl = process.env.PUBLIC_BASE_URL
-    ? `${process.env.PUBLIC_BASE_URL}/dashboard/`
-    : 'http://localhost:4000/dashboard/';
+// loginUrl viene del caller (routes/users.js) ya armado con el token de
+// auto-login de un solo uso — este módulo no toca la DB, solo formatea/envía.
+async function sendWelcomeEmail({ to, distributorCode, password, roleLabel, rank, loginUrl }) {
   const result = await sendViaResend({
     to,
     subject: 'SHM — Tu acceso a la plataforma',

@@ -2032,7 +2032,7 @@
         if (r.email_sent) {
           alert(`✓ Usuario creado.\n\nID: ${r.user.distributor_code}\nRol: ${r.user.role_label}\nRango: ${r.user.bhip_rank}\n\nSe envió correo de bienvenida con la contraseña temporal a ${r.user.email}.${warn}`);
         } else {
-          alert(`✓ Usuario creado.\n\nID: ${r.user.distributor_code}\nRol: ${r.user.role_label}\nRango: ${r.user.bhip_rank}\n\n⚠ SMTP no configurado — entrega manualmente:\nContraseña temporal: ${r.initial_password}${warn}`);
+          alert(`✓ Usuario creado.\n\nID: ${r.user.distributor_code}\nRol: ${r.user.role_label}\nRango: ${r.user.bhip_rank}\n\n⚠ No se pudo enviar el correo — entrega esto manualmente:\nContraseña temporal: ${r.initial_password}\nLink de acceso directo: ${r.login_url}${warn}`);
         }
         loadUsers();
       } catch (err) { alert(err.message); }
@@ -3098,9 +3098,34 @@
     } catch (err) { logout(); }
   }
 
-  // Si el usuario llegó por un link de reset, mostrar pantalla aunque haya sesión
+  // Auto-login de un solo uso desde el correo de bienvenida — consume el
+  // token, guarda la sesión y arranca boot() como si hubiera hecho login a
+  // mano. boot() ya redirige a onboarding solo con profile_completed=0.
+  async function tryTokenLogin(loginToken) {
+    location.hash = '';
+    try {
+      const data = await api('/api/auth/token-login', {
+        method: 'POST',
+        body: JSON.stringify({ token: loginToken }),
+      });
+      token = data.token; me = data.user;
+      localStorage.setItem(STORAGE_TOKEN, token);
+      await boot();
+    } catch (err) {
+      showScreen('login');
+      const errEl = $('login-error');
+      errEl.textContent = err.message || 'El link de acceso no es válido o ya expiró. Ingresa con tu código y contraseña.';
+      errEl.hidden = false;
+    }
+  }
+
+  // Si el usuario llegó por un link de reset o de auto-login, priorizar eso
+  // aunque ya haya una sesión guardada.
   if (location.hash && location.hash.startsWith('#reset=')) {
     showScreen('reset');
+  } else if (location.hash && location.hash.startsWith('#login=')) {
+    const loginToken = location.hash.slice('#login='.length);
+    tryTokenLogin(loginToken);
   } else if (token) {
     boot();
   } else {
