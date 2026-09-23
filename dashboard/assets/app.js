@@ -1696,6 +1696,7 @@
       <div class="field"><label>Sistema</label><select id="eu-system"><option value="">(ninguno — cross-system)</option>${sysOpts}</select></div>
       <div class="field"><label>Módulo</label><select id="eu-module"><option value="">(ninguno)</option>${modOpts}</select></div>
       <div class="field"><label>Líder Productivo (mesa)</label><select id="eu-pl"><option value="">(ninguno)</option>${plOpts}</select></div>
+      ${u.pending_productive_leader_name ? `<div class="hint hint--positive" style="margin: -8px 0 14px;">⌛ El usuario escribió a mano: <strong>${u.pending_productive_leader_name}</strong> — todavía no está registrado. Asignalo arriba cuando lo esté; se limpia solo.</div>` : ''}
       <p class="hint" style="margin: 0 0 14px;">Cambios manuales — usa con cuidado. Mover entre sistemas/módulos rompe relaciones con su downline.</p>
       <button class="primary" id="eu-save">Guardar cambios</button>
     `);
@@ -1896,7 +1897,11 @@
             : `<span class="tag gold">${u.role_label}</span>`}</td>
           <td>${u.bhip_rank ? `<span class="tag" style="background:rgba(46,139,139,0.18);color:var(--teal-400);border-color:rgba(70,176,168,0.3);">${u.bhip_rank}</span>` : '—'}</td>
           <td>${u.module_number ? `M${u.module_number}` : '—'}</td>
-          <td>${u.productive_leader_name || '—'}</td>
+          <td>${u.productive_leader_name
+            ? u.productive_leader_name
+            : (u.pending_productive_leader_name
+                ? `<span class="tag gold" title="Escrito a mano, todavía no está registrado en el sistema">⌛ ${u.pending_productive_leader_name}</span>`
+                : '—')}</td>
           <td>${(me.role === 'lider_supremo' || me.role === 'system_leader' || me.role === 'module_leader')
             ? `<span class="code-pill code-edit" data-id="${u.id}" data-code="${u.distributor_code}" data-name="${u.full_name.replace(/"/g, '&quot;')}" title="Click para editar el ID de distribuidor" style="cursor:pointer;">${u.distributor_code} ✎</span>`
             : `<span class="code-pill">${u.distributor_code}</span>`}</td>
@@ -3060,6 +3065,77 @@
     alert(err.message);
   }
 
+  // ============ MODAL OBLIGATORIO: completa tu módulo ============
+  // Sin botón de cerrar, sin click-fuera-para-cerrar — a propósito. La única
+  // salida es completar el form, que llama a boot() de nuevo al terminar.
+  async function openModuleGate() {
+    document.body.classList.add('module-gate-open');
+    const modSel = $('mg-module');
+    const plBlock = $('mg-pl-block');
+    const plSel = $('mg-pl');
+    const pendingBlock = $('mg-pending-block');
+    const pendingInput = $('mg-pending-name');
+    const errEl = $('mg-error');
+    errEl.hidden = true;
+    modSel.innerHTML = '<option value="">Cargando...</option>';
+    plBlock.hidden = true;
+    pendingBlock.hidden = true;
+
+    try {
+      const { modules } = await api('/api/users/module-gate/options');
+      modSel.innerHTML = '<option value="">Selecciona...</option>' +
+        modules.map((m) => `<option value="${m.id}">M${m.number} — ${m.name}</option>`).join('');
+    } catch (err) {
+      errEl.textContent = err.message; errEl.hidden = false;
+    }
+
+    modSel.onchange = async () => {
+      plBlock.hidden = true;
+      pendingBlock.hidden = true;
+      plSel.innerHTML = '<option value="">Selecciona...</option>';
+      if (!modSel.value) return;
+      try {
+        const { productive_leaders } = await api(`/api/users/module-gate/leaders?module_id=${modSel.value}`);
+        plSel.innerHTML =
+          '<option value="">Selecciona...</option>' +
+          productive_leaders.map((p) => `<option value="${p.id}">${p.full_name}</option>`).join('') +
+          '<option value="__self__">Yo soy líder productivo</option>' +
+          '<option value="__pending__">Mi líder productivo aún no está en el sistema</option>';
+        plBlock.hidden = false;
+      } catch (err) {
+        errEl.textContent = err.message; errEl.hidden = false;
+      }
+    };
+
+    plSel.onchange = () => {
+      pendingBlock.hidden = plSel.value !== '__pending__';
+    };
+
+    $('mg-form').onsubmit = async (e) => {
+      e.preventDefault();
+      errEl.hidden = true;
+      if (!modSel.value) { errEl.textContent = 'Selecciona tu módulo'; errEl.hidden = false; return; }
+      if (!plSel.value) { errEl.textContent = 'Selecciona tu líder productivo'; errEl.hidden = false; return; }
+      if (plSel.value === '__pending__' && !pendingInput.value.trim()) {
+        errEl.textContent = 'Escribe el nombre de tu líder productivo';
+        errEl.hidden = false; return;
+      }
+      const body = { module_id: parseInt(modSel.value, 10) };
+      if (plSel.value === '__pending__') {
+        body.pending_productive_leader_name = pendingInput.value.trim();
+      } else if (plSel.value !== '__self__') {
+        body.productive_leader_id = parseInt(plSel.value, 10);
+      }
+      try {
+        await api('/api/users/module-gate/complete', { method: 'POST', body: JSON.stringify(body) });
+        document.body.classList.remove('module-gate-open');
+        await boot();
+      } catch (err) {
+        errEl.textContent = err.message; errEl.hidden = false;
+      }
+    };
+  }
+
   // ============ BOOT ============
   async function boot() {
     try {
@@ -3069,6 +3145,19 @@
       // Si el perfil no está completo o se forzó cambio de pwd → onboarding
       if (!me.profile_completed || me.password_must_change) {
         showScreen('onboarding');
+        return;
+      }
+
+      // Módulo obligatorio: roles que lo requieren no pueden usar el dashboard
+      // sin uno. Se muestra el shell detrás (igual que el overlay de cuenta
+      // desactivada) pero bloqueado hasta completar el modal.
+      const NEEDS_MODULE_ROLES = ['module_leader', 'productive_leader', 'distributor'];
+      if (NEEDS_MODULE_ROLES.includes(me.role) && !me.module_id) {
+        $('me-name').textContent = me.full_name;
+        $('me-role').textContent = me.role_label;
+        $('user-code').textContent = me.distributor_code;
+        showScreen('app');
+        openModuleGate();
         return;
       }
 

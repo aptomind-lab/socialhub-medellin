@@ -43,6 +43,73 @@ router.get('/', requireAuth, (req, res) => {
   res.json({ users: rows });
 });
 
+// ─── Modal obligatorio "completa tu módulo" (module_id NULL al entrar) ───
+const NEEDS_MODULE_ROLES = ['module_leader', 'productive_leader', 'distributor'];
+
+// GET /api/users/module-gate/options — módulos del propio sistema del actor.
+router.get('/module-gate/options', requireAuth, (req, res) => {
+  if (req.user.system_id == null) return res.json({ modules: [] });
+  const modules = db.prepare(`
+    SELECT id, number, name FROM modules WHERE system_id = ? AND active = 1 ORDER BY number
+  `).all(req.user.system_id);
+  res.json({ modules });
+});
+
+// GET /api/users/module-gate/leaders?module_id=X — líderes productivos de ese módulo.
+router.get('/module-gate/leaders', requireAuth, (req, res) => {
+  const moduleId = parseInt(req.query.module_id, 10);
+  if (!moduleId) return res.status(400).json({ error: 'module_id requerido' });
+  const mod = db.prepare('SELECT id, system_id FROM modules WHERE id = ?').get(moduleId);
+  if (!mod || mod.system_id !== req.user.system_id) {
+    return res.status(403).json({ error: 'Módulo fuera de tu sistema' });
+  }
+  const leaders = db.prepare(`
+    SELECT id, full_name FROM users WHERE role = 'productive_leader' AND module_id = ? ORDER BY full_name
+  `).all(moduleId);
+  res.json({ productive_leaders: leaders });
+});
+
+// POST /api/users/module-gate/complete — el propio usuario completa su módulo
+// (y opcionalmente su líder productivo) desde el modal obligatorio de login.
+// Tres formas de resolver el líder productivo:
+//   - productive_leader_id de un líder real de ese módulo.
+//   - ninguno de los dos campos → "Yo soy líder productivo" (no aplica).
+//   - pending_productive_leader_name → aún no está registrado; se guarda el
+//     texto como pista y productive_leader_id queda NULL hasta que
+//     lider_modulo/lider_sistema lo asignen a mano desde Usuarios.
+router.post('/module-gate/complete', requireAuth, (req, res) => {
+  if (!NEEDS_MODULE_ROLES.includes(req.user.role)) {
+    return res.status(403).json({ error: 'Tu rol no requiere módulo' });
+  }
+  const { module_id, productive_leader_id, pending_productive_leader_name } = req.body || {};
+  const modId = parseInt(module_id, 10);
+  if (!modId) return res.status(400).json({ error: 'Selecciona tu módulo' });
+  const mod = db.prepare('SELECT id, system_id FROM modules WHERE id = ?').get(modId);
+  if (!mod || mod.system_id !== req.user.system_id) {
+    return res.status(400).json({ error: 'Módulo inválido para tu sistema' });
+  }
+
+  let finalPlId = null;
+  let pendingName = null;
+  if (productive_leader_id) {
+    const pl = db.prepare(`
+      SELECT id FROM users WHERE id = ? AND role = 'productive_leader' AND module_id = ?
+    `).get(parseInt(productive_leader_id, 10), modId);
+    if (!pl) return res.status(400).json({ error: 'Líder productivo inválido para ese módulo' });
+    finalPlId = pl.id;
+  } else if (pending_productive_leader_name && String(pending_productive_leader_name).trim()) {
+    pendingName = String(pending_productive_leader_name).trim();
+  }
+  // Si no vino ninguno de los dos: "Yo soy líder productivo" — ambos quedan NULL.
+
+  db.prepare(`
+    UPDATE users SET module_id = ?, productive_leader_id = ?, pending_productive_leader_name = ?
+    WHERE id = ?
+  `).run(modId, finalPlId, pendingName, req.user.id);
+
+  res.json({ user: decorate(db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id)) });
+});
+
 // Crear usuario (nuevo flujo BHIP).
 // Campos obligatorios: distributor_code (ID BHIP), email, role, bhip_rank, module_id.
 // Sistema genera contraseña aleatoria, marca password_must_change=1 y profile_completed=0,
@@ -266,7 +333,12 @@ router.patch('/:id', requireAuth, (req, res) => {
     }
     fields.push('module_id = ?'); values.push(module_id || null);
   }
-  if (productive_leader_id !== undefined) { fields.push('productive_leader_id = ?'); values.push(productive_leader_id || null); }
+  if (productive_leader_id !== undefined) {
+    fields.push('productive_leader_id = ?'); values.push(productive_leader_id || null);
+    // Asignar un líder productivo real resuelve el pendiente — limpia el
+    // nombre a mano que se había guardado desde el modal de "aún no está".
+    if (productive_leader_id) { fields.push('pending_productive_leader_name = ?'); values.push(null); }
+  }
   if (active !== undefined)    { fields.push('active = ?');    values.push(active ? 1 : 0); }
   if (bhip_rank !== undefined) {
     if (!isValidRank(bhip_rank)) return res.status(400).json({ error: 'Rango BHIP inválido' });
@@ -393,6 +465,7 @@ function decorate(u) {
     module_name: u.module_name,
     productive_leader_id: u.productive_leader_id,
     productive_leader_name: u.productive_leader_name,
+    pending_productive_leader_name: u.pending_productive_leader_name,
     active: u.active,
     blocked: u.blocked,
     password_must_change: u.password_must_change,

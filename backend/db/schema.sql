@@ -38,6 +38,9 @@ CREATE TABLE IF NOT EXISTS users (
   system_id             INTEGER REFERENCES systems(id) ON DELETE SET NULL,
   module_id             INTEGER REFERENCES modules(id) ON DELETE SET NULL,
   productive_leader_id  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  -- Nombre a mano del líder productivo cuando todavía no está registrado en
+  -- el sistema — se limpia solo cuando se asigna un productive_leader_id real.
+  pending_productive_leader_name TEXT,
   firmado_por           INTEGER REFERENCES users(id) ON DELETE SET NULL,
   bhip_rank             TEXT    NOT NULL DEFAULT 'Profesional',
   password_must_change  INTEGER NOT NULL DEFAULT 0,

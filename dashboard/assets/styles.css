@@ -1233,6 +1233,45 @@ body.inactive-user #app-screen .view {
   border-color: var(--danger);
   color: #fff;
 }
+
+/* ==== MODAL OBLIGATORIO: completa tu módulo ====
+   Mismo patrón que #inactive-overlay (overlay fijo + pointer-events:none en
+   el resto del shell) — pero sin botón de cerrar en el markup, a propósito:
+   no hay forma de omitirlo salvo completando el form. */
+#module-gate-overlay {
+  position: fixed; inset: 0; z-index: var(--z-blocking);
+  background: rgba(3, 8, 16, 0.72);
+  backdrop-filter: blur(4px);
+  display: none; align-items: center; justify-content: center;
+  padding: var(--space-6);
+}
+body.module-gate-open #module-gate-overlay { display: flex; }
+body.module-gate-open #app-screen .sidebar,
+body.module-gate-open #app-screen .topbar,
+body.module-gate-open #app-screen .views,
+body.module-gate-open #app-screen .view {
+  pointer-events: none !important;
+  user-select: none;
+}
+.module-gate-card {
+  /* Vive sobre un overlay a pantalla completa ya oscurecido — mismo criterio
+     que .inactive-message: el borde ya es suficiente señal, una sombra de
+     elevación encima no aporta profundidad real ahí. */
+  max-width: 460px; width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-8) var(--space-7);
+}
+.module-gate-title {
+  font-size: var(--text-xl); font-weight: 800; letter-spacing: -0.02em;
+  color: var(--accent-strong); margin-bottom: var(--space-3);
+}
+.module-gate-card > p {
+  font-size: var(--text-sm); line-height: 1.55; color: var(--ink-2);
+  margin: 0 0 var(--space-6);
+}
+.module-gate-card .field { display: flex; flex-direction: column; gap: var(--space-2); margin-bottom: var(--space-4); }
 @media (hover: hover) and (pointer: fine) {
   /* Oscurece en hover en vez de aclarar — con texto blanco, aclarar el rojo
      bajaba el contraste a 3.6:1 (falla WCAG); oscurecer da 7.7:1 y además

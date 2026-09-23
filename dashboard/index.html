@@ -107,6 +107,37 @@
         <button type="button" id="inactive-logout" class="primary">Cerrar sesión</button>
       </div>
     </div>
+
+    <!-- Modal obligatorio: completa tu módulo. Sin botón de cerrar a propósito
+         — no se puede omitir. Se muestra si module_id llega NULL en /auth/me. -->
+    <div id="module-gate-overlay" hidden aria-hidden="true">
+      <div class="module-gate-card">
+        <div class="module-gate-title">Completa tu información</div>
+        <p>Antes de continuar necesitamos saber tu módulo y tu líder productivo.</p>
+        <form id="mg-form">
+          <div class="field">
+            <label>¿Cuál es tu número de módulo?</label>
+            <select id="mg-module" required><option value="">Selecciona...</option></select>
+          </div>
+
+          <div id="mg-pl-block" class="field" hidden>
+            <label>¿Quién es tu líder productivo?</label>
+            <select id="mg-pl">
+              <option value="">Selecciona...</option>
+              <option value="__self__">Yo soy líder productivo</option>
+              <option value="__pending__">Mi líder productivo aún no está en el sistema</option>
+            </select>
+          </div>
+          <div id="mg-pending-block" class="field" hidden>
+            <label>Nombre de tu líder productivo</label>
+            <input type="text" id="mg-pending-name" placeholder="Nombre completo" />
+          </div>
+
+          <div id="mg-error" class="error" hidden></div>
+          <button class="primary" type="submit" style="width:100%;margin-top:10px;">Guardar</button>
+        </form>
+      </div>
+    </div>
     <aside class="sidebar">
       <div class="brand-row">
         <span class="mark">◆</span>
