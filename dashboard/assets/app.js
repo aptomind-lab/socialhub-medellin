@@ -3070,6 +3070,9 @@
   // salida es completar el form, que llama a boot() de nuevo al terminar.
   async function openModuleGate() {
     document.body.classList.add('module-gate-open');
+    // [hidden] tiene display:none !important en el reset global — la clase
+    // del body sola no le gana. Hay que sacar el atributo del propio overlay.
+    $('module-gate-overlay').hidden = false;
     const modSel = $('mg-module');
     const plBlock = $('mg-pl-block');
     const plSel = $('mg-pl');
@@ -3129,6 +3132,7 @@
       try {
         await api('/api/users/module-gate/complete', { method: 'POST', body: JSON.stringify(body) });
         document.body.classList.remove('module-gate-open');
+        $('module-gate-overlay').hidden = true;
         await boot();
       } catch (err) {
         errEl.textContent = err.message; errEl.hidden = false;
