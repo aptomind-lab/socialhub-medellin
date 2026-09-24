@@ -1693,13 +1693,17 @@
       <div class="field"><label>Correo</label><input type="email" id="eu-email" value="${u.email || ''}" /></div>
       <div class="field"><label>Celular</label><input type="text" id="eu-phone" value="${u.phone || ''}" /></div>
       <div class="field"><label>Rol</label><select id="eu-role">${roleOpts}</select></div>
-      <div class="field"><label>Sistema</label><select id="eu-system"><option value="">(ninguno — cross-system)</option>${sysOpts}</select></div>
+      <div class="field" id="eu-system-wrap"><label>Sistema</label><select id="eu-system"><option value="">(ninguno — cross-system)</option>${sysOpts}</select></div>
       <div class="field"><label>Módulo</label><select id="eu-module"><option value="">(ninguno)</option>${modOpts}</select></div>
       <div class="field"><label>Líder Productivo (mesa)</label><select id="eu-pl"><option value="">(ninguno)</option>${plOpts}</select></div>
       ${u.pending_productive_leader_name ? `<div class="hint hint--positive" style="margin: -8px 0 14px;">⌛ El usuario escribió a mano: <strong>${u.pending_productive_leader_name}</strong> — todavía no está registrado. Asignalo arriba cuando lo esté; se limpia solo.</div>` : ''}
       <p class="hint" style="margin: 0 0 14px;">Cambios manuales — usa con cuidado. Mover entre sistemas/módulos rompe relaciones con su downline.</p>
       <button class="primary" id="eu-save">Guardar cambios</button>
     `);
+    // Mover entre sistemas es solo de lider_supremo (el backend ya lo exige);
+    // para system_leader el campo no serviría de nada — se oculta para no
+    // sugerir una acción que el backend va a ignorar en silencio.
+    if (me.role !== 'lider_supremo') $('eu-system-wrap').style.display = 'none';
     // Blindaje: si el admin no toca un select, NO se manda ese campo en el
     // PATCH — evita borrar en silencio system_id/module_id/productive_leader_id
     // cuando el <option> correcto no estaba en la lista al abrir el modal (fue
@@ -1907,7 +1911,7 @@
             : `<span class="code-pill">${u.distributor_code}</span>`}</td>
           <td><span class="${blocked ? 'tag red' : ''}">${lastTxt}</span></td>
           <td>${pendingTag}</td>
-          <td>${me.role === 'lider_supremo' ? `<button class="ghost-btn" data-action="edit-user" data-id="${u.id}" style="margin-right:6px;">Editar</button>` : ''}${(me.role === 'lider_supremo' || me.role === 'system_leader' || me.role === 'module_leader')
+          <td>${(me.role === 'lider_supremo' || me.role === 'system_leader') ? `<button class="ghost-btn" data-action="edit-user" data-id="${u.id}" style="margin-right:6px;">Editar</button>` : ''}${(me.role === 'lider_supremo' || me.role === 'system_leader' || me.role === 'module_leader')
             ? `<button class="ghost-btn" data-action="edit-rank" data-id="${u.id}" data-rank="${u.bhip_rank || ''}">Rango</button>
                <button class="ghost-btn" data-action="reset-pwd" data-id="${u.id}" data-name="${u.full_name.replace(/"/g, '&quot;')}" data-email="${u.email || ''}" style="margin-left:6px;">Reset pwd</button>
                ${(me.role === 'lider_supremo' || me.role === 'system_leader') && u.id !== me.id && u.role !== 'lider_supremo' ? `<button class="ghost-btn" data-action="toggle-active" data-id="${u.id}" data-active="${u.active ? 1 : 0}" data-name="${u.full_name.replace(/"/g, '&quot;')}" style="margin-left:6px;${u.active ? 'color:#FFB347;border-color:rgba(255,179,71,0.35);' : 'color:var(--teal-400);border-color:rgba(70,176,168,0.35);'}">${u.active ? 'Desactivar' : 'Activar'}</button>` : ''}
