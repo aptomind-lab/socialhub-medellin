@@ -26,6 +26,7 @@
   let cachedModules = [];
   let cachedDistributors = [];
   let cachedProductiveLeaders = [];
+  let cachedUsersList = []; // última respuesta de /api/users, para filtrar por nombre sin re-consultar
   let stageLabels = {};
   let scannableStages = [];
   let charts = {};
@@ -1972,8 +1973,20 @@
     const data = await api('/api/users' + qs({ role, module_id: getFilters().module_id }));
     cachedDistributors = data.users.filter((u) => u.role === 'distributor');
     cachedProductiveLeaders = data.users.filter(isMesaOwner);
+    cachedUsersList = data.users;
+    renderUsersTable();
+  }
 
-    $('users-tbody').innerHTML = data.users.map((u) => {
+  // Pinta la tabla de Usuarios a partir de cachedUsersList (ya traída del
+  // backend con los filtros de rol/módulo), aplicando además el filtro de
+  // nombre en tiempo real — puramente en el cliente, sin volver a consultar.
+  function renderUsersTable() {
+    const term = ($('users-name-search')?.value || '').trim().toLowerCase();
+    const filtered = term
+      ? cachedUsersList.filter((u) => (u.full_name || '').toLowerCase().includes(term))
+      : cachedUsersList;
+
+    $('users-tbody').innerHTML = filtered.map((u) => {
       const blocked = u.blocked;
       const last = u.last_message_at ? hoursSince(u.last_message_at) : null;
       const lastTxt = u.role === 'distributor'
@@ -2071,6 +2084,9 @@
   }
 
   $('users-role-filter').addEventListener('change', loadUsers);
+  // Búsqueda por nombre: filtra en tiempo real sobre los datos ya cargados,
+  // sin volver a consultar el backend en cada tecla.
+  $('users-name-search').addEventListener('input', renderUsersTable);
 
   $('new-user').addEventListener('click', async () => {
     if (!cachedModules.length) await loadModules();
