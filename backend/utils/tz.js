@@ -10,4 +10,11 @@ function localDate(d = new Date()) {
   return shifted.toISOString().slice(0, 10);
 }
 
-module.exports = { SQL_TZ, TZ_OFFSET_HOURS, localDate };
+// Devuelve la hora local Colombia en formato HH:MM (24h) — para comparar
+// contra events.event_time y saber si la ocurrencia de hoy ya pasó.
+function localTime(d = new Date()) {
+  const shifted = new Date(d.getTime() + TZ_OFFSET_HOURS * 3600 * 1000);
+  return shifted.toISOString().slice(11, 16);
+}
+
+module.exports = { SQL_TZ, TZ_OFFSET_HOURS, localDate, localTime };

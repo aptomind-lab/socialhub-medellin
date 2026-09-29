@@ -932,6 +932,10 @@ button.primary.sm { padding: var(--space-2) var(--space-4); font-size: var(--tex
 }
 
 /* ==== MI LINK DE REGISTRO ==== */
+/* #ref-bom-wrap usa .field fuera de .form-row/.modal-body (los únicos
+   contextos donde .field ya tiene layout) — se le da el mismo tratamiento
+   acá para que el label quede arriba del select, no en línea. */
+#ref-bom-wrap.field { display: flex; flex-direction: column; gap: var(--space-2); }
 .ref-link-row {
   display: flex; gap: var(--space-3); align-items: stretch;
 }

@@ -212,6 +212,9 @@ CREATE TABLE IF NOT EXISTS events (
   active          INTEGER NOT NULL DEFAULT 1,
   system_id       INTEGER REFERENCES systems(id) ON DELETE SET NULL,
   wg_session      INTEGER,
+  -- Hora real del evento (HH:MM, 24h) — opcional. Permite mostrar la hora
+  -- exacta y ocultar la ocurrencia de hoy una vez que ya pasó.
+  event_time      TEXT,
   created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 

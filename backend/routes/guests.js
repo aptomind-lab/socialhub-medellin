@@ -27,7 +27,7 @@ const registerLimiter = rateLimit({
 
 // PÚBLICO — usado por la landing
 router.post('/register', registerLimiter, async (req, res) => {
-  const { full_name, email, phone, access_code } = req.body || {};
+  const { full_name, email, phone, access_code, bom_date } = req.body || {};
   if (!full_name || !email || !phone || !access_code) {
     return res.status(400).json({ error: 'Todos los campos son obligatorios' });
   }
@@ -53,23 +53,49 @@ router.post('/register', registerLimiter, async (req, res) => {
   // B.O.M del sistema del contactador (igual que /api/events/next-bom-public);
   // cae a un B.O.M global si no hay uno propio. Sin scope, un B.O.M mal
   // configurado en otro sistema podía asignarse a cualquier invitado.
+  //
+  // Si el link trae bom_date (el invitador ya eligió fecha puntual desde Mi
+  // Perfil), se usa esa en vez de calcular "la próxima" — pero solo si de
+  // verdad corresponde a un B.O.M activo de este sistema en ese día de la
+  // semana; si no, se ignora y cae al cálculo automático de siempre (nunca
+  // se confía en una fecha arbitraria enviada por el cliente).
   let bomDate = null;
   try {
-    const bomEv = contactor.system_id
-      ? db.prepare(`
-          SELECT recurrence_days FROM events
-           WHERE stage_target = 'BOM' AND active = 1 AND recurrence_type = 'weekly'
-             AND (system_id = ? OR system_id IS NULL)
-           ORDER BY (system_id IS NULL) ASC, id ASC
-           LIMIT 1
-        `).get(contactor.system_id)
-      : db.prepare(`
-          SELECT recurrence_days FROM events
-           WHERE stage_target = 'BOM' AND active = 1 AND recurrence_type = 'weekly'
-           ORDER BY (system_id IS NULL) DESC, id ASC
-           LIMIT 1
-        `).get();
-    if (bomEv && bomEv.recurrence_days) bomDate = nextOccurrenceForWeeklyEvent(bomEv.recurrence_days);
+    if (bom_date && /^\d{4}-\d{2}-\d{2}$/.test(bom_date)) {
+      const DAYS = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+      const dayKey = DAYS[new Date(bom_date + 'T00:00:00Z').getUTCDay()];
+      const candidates = contactor.system_id
+        ? db.prepare(`
+            SELECT recurrence_days FROM events
+             WHERE stage_target = 'BOM' AND active = 1 AND recurrence_type = 'weekly'
+               AND (system_id = ? OR system_id IS NULL)
+          `).all(contactor.system_id)
+        : db.prepare(`
+            SELECT recurrence_days FROM events
+             WHERE stage_target = 'BOM' AND active = 1 AND recurrence_type = 'weekly'
+          `).all();
+      const valid = candidates.some((c) =>
+        c.recurrence_days && c.recurrence_days.split(',').map((s) => s.trim().toLowerCase()).includes(dayKey)
+      );
+      if (valid) bomDate = bom_date;
+    }
+    if (!bomDate) {
+      const bomEv = contactor.system_id
+        ? db.prepare(`
+            SELECT recurrence_days FROM events
+             WHERE stage_target = 'BOM' AND active = 1 AND recurrence_type = 'weekly'
+               AND (system_id = ? OR system_id IS NULL)
+             ORDER BY (system_id IS NULL) ASC, id ASC
+             LIMIT 1
+          `).get(contactor.system_id)
+        : db.prepare(`
+            SELECT recurrence_days FROM events
+             WHERE stage_target = 'BOM' AND active = 1 AND recurrence_type = 'weekly'
+             ORDER BY (system_id IS NULL) DESC, id ASC
+             LIMIT 1
+          `).get();
+      if (bomEv && bomEv.recurrence_days) bomDate = nextOccurrenceForWeeklyEvent(bomEv.recurrence_days);
+    }
   } catch (e) { /* sin BOM configurado, OK */ }
 
   const token = tokenGen();

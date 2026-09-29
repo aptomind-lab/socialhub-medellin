@@ -3,7 +3,7 @@ const db = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { STAGES, SCANNABLE_STAGES, nextStageAfterScan, STAGE_LABELS } = require('../utils/stages');
 const { eventHappensToday, dayOfWeekLabel, DAYS_ES, DAYS, getISOWeek, dayOfWeekKey, nextOccurrenceForWeeklyEvent, nextOccurrencesForWeeklyEvent } = require('../utils/calendar');
-const { localDate } = require('../utils/tz');
+const { localDate, localTime } = require('../utils/tz');
 const wg = require('../utils/wg');
 const colors = require('../utils/colors');
 const gam = require('../utils/gamification');
@@ -47,10 +47,13 @@ router.get('/', requireAuth, (req, res) => {
   });
 });
 
+const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
 router.post('/', requireAuth, requireRole('lider_supremo', 'system_leader', 'module_leader'), (req, res) => {
-  const { name, stage_target, date, recurrence_type, recurrence_days, system_id, wg_session } = req.body || {};
+  const { name, stage_target, date, recurrence_type, recurrence_days, system_id, wg_session, event_time } = req.body || {};
   if (!name || !stage_target || !date) return res.status(400).json({ error: 'Faltan campos' });
   if (!SCANNABLE_STAGES.includes(stage_target)) return res.status(400).json({ error: 'Etapa inválida' });
+  if (event_time && !TIME_RE.test(event_time)) return res.status(400).json({ error: 'Hora inválida (HH:MM)' });
 
   // system_id:
   //   lider_supremo → puede crear global (NULL) o específico (envía system_id)
@@ -64,14 +67,14 @@ router.post('/', requireAuth, requireRole('lider_supremo', 'system_leader', 'mod
   const wgs = (wg_session != null && wg_session !== '') ? parseInt(wg_session, 10) : null;
 
   const info = db.prepare(`
-    INSERT INTO events (name, stage_target, date, recurrence_type, recurrence_days, system_id, wg_session)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(name, stage_target, date, recurrence_type || 'one_time', recurrence_days || null, finalSystemId, wgs);
+    INSERT INTO events (name, stage_target, date, recurrence_type, recurrence_days, system_id, wg_session, event_time)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(name, stage_target, date, recurrence_type || 'one_time', recurrence_days || null, finalSystemId, wgs, event_time || null);
   res.status(201).json({ event: db.prepare('SELECT * FROM events WHERE id = ?').get(info.lastInsertRowid) });
 });
 
 router.patch('/:id', requireAuth, requireRole('lider_supremo', 'system_leader', 'module_leader'), (req, res) => {
-  const { name, stage_target, date, active, recurrence_type, recurrence_days, wg_session } = req.body || {};
+  const { name, stage_target, date, active, recurrence_type, recurrence_days, wg_session, event_time } = req.body || {};
   const fields = [], values = [];
   if (name !== undefined)            { fields.push('name = ?');            values.push(name); }
   if (stage_target !== undefined) {
@@ -82,6 +85,10 @@ router.patch('/:id', requireAuth, requireRole('lider_supremo', 'system_leader', 
   if (active !== undefined)          { fields.push('active = ?');          values.push(active ? 1 : 0); }
   if (recurrence_type !== undefined) { fields.push('recurrence_type = ?'); values.push(recurrence_type); }
   if (recurrence_days !== undefined) { fields.push('recurrence_days = ?'); values.push(recurrence_days || null); }
+  if (event_time !== undefined) {
+    if (event_time && !TIME_RE.test(event_time)) return res.status(400).json({ error: 'Hora inválida (HH:MM)' });
+    fields.push('event_time = ?'); values.push(event_time || null);
+  }
   if (wg_session !== undefined) {
     const v = (wg_session === null || wg_session === '') ? null : parseInt(wg_session, 10);
     fields.push('wg_session = ?'); values.push(v);
@@ -264,6 +271,41 @@ router.get('/next-bom-public', (req, res) => {
     if (contactor) systemId = contactor.system_id;
   }
 
+  // ?bom=YYYY-MM-DD (nuevo, opcional): el invitado viene de un link donde el
+  // invitador ya eligió una fecha específica desde Mi Perfil. En vez de
+  // calcular "la próxima", se confirma y describe ESA fecha puntual (con su
+  // hora real, si está configurada). Sin este parámetro el endpoint se
+  // comporta exactamente igual que antes — no se toca ese camino.
+  const bomParam = req.query.bom && /^\d{4}-\d{2}-\d{2}$/.test(req.query.bom) ? req.query.bom : null;
+  if (bomParam) {
+    const dayKey = DAYS[new Date(bomParam + 'T00:00:00Z').getUTCDay()];
+    const candidates = systemId
+      ? db.prepare(`
+          SELECT name, recurrence_days, system_id, event_time FROM events
+           WHERE stage_target = 'BOM' AND active = 1 AND recurrence_type = 'weekly'
+             AND (system_id = ? OR system_id IS NULL)
+           ORDER BY (system_id IS NULL) ASC, id ASC
+        `).all(systemId)
+      : db.prepare(`
+          SELECT name, recurrence_days, system_id, event_time FROM events
+           WHERE stage_target = 'BOM' AND active = 1 AND recurrence_type = 'weekly'
+           ORDER BY (system_id IS NULL) DESC, id ASC
+        `).all();
+    const match = candidates.find((c) =>
+      c.recurrence_days && c.recurrence_days.split(',').map((s) => s.trim().toLowerCase()).includes(dayKey)
+    );
+    if (!match) return res.status(404).json({ error: 'Fecha de B.O.M inválida o vencida' });
+    return res.json({
+      date: bomParam,
+      day_of_week: dayKey,
+      day_label: DAYS_ES[dayKey],
+      event_time: match.event_time || null,
+      name: match.name,
+      system_id: match.system_id,
+      iso: bomParam,
+    });
+  }
+
   // Si hay sistema → buscar BOM de ese sistema; fallback a evento global (system_id IS NULL).
   // Sin ref → usa el primer BOM global o, si no hay, cualquier BOM activo.
   let ev;
@@ -298,6 +340,53 @@ router.get('/next-bom-public', (req, res) => {
     system_id: ev.system_id,
     iso: date,
   });
+});
+
+// GET /api/events/next-bom-dates — próximas N (default 3) ocurrencias de
+// TODOS los B.O.M activos (recurrentes semanales) del sistema del actor,
+// combinadas y ordenadas por fecha. Si la ocurrencia es HOY y ya tiene
+// event_time configurada y esa hora ya pasó, se excluye. Para Mi Perfil:
+// el usuario elige una fecha puntual para su link de registro.
+router.get('/next-bom-dates', requireAuth, (req, res) => {
+  const count = Math.min(parseInt(req.query.count, 10) || 3, 10);
+  const systemId = req.user.system_id;
+
+  const evs = systemId
+    ? db.prepare(`
+        SELECT id, name, recurrence_days, event_time FROM events
+         WHERE stage_target = 'BOM' AND active = 1 AND recurrence_type = 'weekly'
+           AND (system_id = ? OR system_id IS NULL)
+      `).all(systemId)
+    : db.prepare(`
+        SELECT id, name, recurrence_days, event_time FROM events
+         WHERE stage_target = 'BOM' AND active = 1 AND recurrence_type = 'weekly'
+      `).all();
+
+  const today = localDate();
+  const nowHHMM = localTime();
+  const candidates = [];
+  for (const ev of evs) {
+    if (!ev.recurrence_days) continue;
+    // Se piden de más (count) por evento — luego se combinan y se recorta.
+    // +1 de colchón: si la ocurrencia de hoy se excluye por hora ya pasada,
+    // igual se completan las `count` fechas pedidas en vez de quedar corto.
+    for (const date of nextOccurrencesForWeeklyEvent(ev.recurrence_days, count + 1, new Date())) {
+      // Si la ocurrencia es HOY y ya pasó su hora configurada, no aparece.
+      if (date === today && ev.event_time && ev.event_time <= nowHHMM) continue;
+      candidates.push({ date, event_id: ev.id, name: ev.name, event_time: ev.event_time || null });
+    }
+  }
+  candidates.sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+    if (a.event_time && b.event_time) return a.event_time < b.event_time ? -1 : 1;
+    return 0;
+  });
+
+  const dates = candidates.slice(0, count).map((c) => {
+    const dayKey = DAYS[new Date(c.date + 'T00:00:00Z').getUTCDay()];
+    return { ...c, day_of_week: dayKey, day_label: DAYS_ES[dayKey] };
+  });
+  res.json({ dates });
 });
 
 module.exports = router;

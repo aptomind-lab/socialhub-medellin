@@ -666,12 +666,16 @@
       </div>
     `).join('');
 
-    // Mi link de registro
+    // Mi link de registro — el dropdown de B.O.M es opcional y aditivo: sin
+    // seleccionar nada, el link queda exactamente igual que siempre (?ref=...).
     const refInput = $('ref-link');
+    let refBaseLink = '';
     if (refInput && me.distributor_code) {
       const landingBase = 'https://socialhub-medellin.vercel.app/landing/';
-      refInput.value = `${landingBase}?ref=${encodeURIComponent(me.distributor_code)}`;
+      refBaseLink = `${landingBase}?ref=${encodeURIComponent(me.distributor_code)}`;
+      refInput.value = refBaseLink;
     }
+    loadRefBomOptions(refBaseLink);
 
     // Calendario de actividad — mes actual por defecto
     const monthInput = $('cal-month');
@@ -680,6 +684,42 @@
       monthInput.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     }
     loadActivityCalendar();
+  }
+
+  // "19:00" -> "7:00 PM". Sin hora configurada, no se inventa ninguna.
+  function format12h(hhmm) {
+    if (!hhmm) return null;
+    const [h, m] = hhmm.split(':').map(Number);
+    const period = h >= 12 ? 'PM' : 'AM';
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    return `${h12}:${String(m).padStart(2, '0')} ${period}`;
+  }
+
+  const MONTHS_SHORT_ES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+
+  // Dropdown de B.O.M en "Mi link de registro" — puramente opcional y aditivo.
+  // Si no hay B.O.M próximos o falla la carga, el select queda oculto y el
+  // link se comporta exactamente igual que siempre.
+  async function loadRefBomOptions(refBaseLink) {
+    const wrap = $('ref-bom-wrap');
+    const sel = $('ref-bom-select');
+    if (!wrap || !sel || !refBaseLink) return;
+    try {
+      const { dates } = await api('/api/events/next-bom-dates?count=3');
+      if (!dates || !dates.length) { wrap.hidden = true; return; }
+      sel.innerHTML = '<option value="">Sin fecha específica</option>' + dates.map((d) => {
+        const dd = new Date(d.date + 'T00:00:00Z');
+        const label = `${d.day_label} ${dd.getUTCDate()} ${MONTHS_SHORT_ES[dd.getUTCMonth()]}`;
+        const timeLabel = format12h(d.event_time);
+        return `<option value="${d.date}">${label}${timeLabel ? ' · ' + timeLabel : ''}</option>`;
+      }).join('');
+      wrap.hidden = false;
+      sel.onchange = () => {
+        $('ref-link').value = sel.value ? `${refBaseLink}&bom=${encodeURIComponent(sel.value)}` : refBaseLink;
+      };
+    } catch (err) {
+      wrap.hidden = true; // silencioso — el link normal sigue funcionando igual
+    }
   }
 
   async function loadActivityCalendar() {
@@ -2666,6 +2706,9 @@
         <div style="background:rgba(7,17,28,0.4);padding:10px 14px;border-radius:8px;border:1px solid var(--line);">${dayCheckboxes}</div>
       </div>
       <div class="field" id="ne-date-wrap"><label>Fecha (referencia)</label><input id="ne-date" type="date" value="${ev ? ev.date : ''}" /></div>
+      <div class="field"><label>Hora real (opcional)</label><input id="ne-time" type="time" value="${ev && ev.event_time ? ev.event_time : ''}" />
+        <div class="hint" style="margin-top:4px;">Se muestra tal cual a los invitados (ej. en el link de registro de B.O.M). Sin hora, no se puede saber si la ocurrencia de hoy ya pasó.</div>
+      </div>
       <div class="field" id="ne-wgs-wrap" style="display:none;"><label>Sesión WG (1-9, opcional)</label>
         <input id="ne-wgs" type="number" min="1" max="9" placeholder="Ej. 1 para PT/WG1, 2 para WG2..." value="${ev && ev.wg_session ? ev.wg_session : ''}" />
         <div class="hint" style="margin-top:4px;">WG1 incluye automáticamente los escaneos de Plan de Trabajo del mismo día.</div>
@@ -2702,6 +2745,7 @@
           recurrence_type: $('ne-type').value,
           recurrence_days: $('ne-type').value === 'weekly' ? (days.join(',') || null) : null,
           wg_session: (stg === 'WORKING_GROUP' || stg === 'PLAN_TRABAJO') && wgsRaw ? parseInt(wgsRaw, 10) : null,
+          event_time: $('ne-time').value || null,
         };
         if (isEdit) {
           await api(`/api/events/${ev.id}`, { method: 'PATCH', body: JSON.stringify(body) });
