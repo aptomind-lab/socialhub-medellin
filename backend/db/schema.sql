@@ -58,6 +58,20 @@ CREATE INDEX IF NOT EXISTS idx_users_system_id   ON users(system_id);
 CREATE INDEX IF NOT EXISTS idx_users_rank     ON users(bhip_rank);
 CREATE INDEX IF NOT EXISTS idx_users_code     ON users(distributor_code);
 
+-- Roles múltiples simultáneos: users.role sigue siendo el rol principal (de
+-- donde salen los permisos); esta tabla es aditiva y guarda todos los roles
+-- que un usuario tiene, incluido siempre el principal.
+CREATE TABLE IF NOT EXISTS user_roles (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role        TEXT    NOT NULL,
+  created_at  TEXT    DEFAULT (datetime('now')),
+  created_by  INTEGER,
+  UNIQUE(user_id, role)
+);
+CREATE INDEX IF NOT EXISTS idx_user_roles_user ON user_roles(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_roles_role ON user_roles(role);
+
 CREATE TABLE IF NOT EXISTS guests (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
   full_name       TEXT    NOT NULL,

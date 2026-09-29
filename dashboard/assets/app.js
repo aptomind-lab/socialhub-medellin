@@ -8,10 +8,15 @@
   // lider_modulo/lider_sistema/lider_supremo también tienen mesa propia — deben
   // poder aparecer como "mesa" en los selects de asignación, igual que un PL.
   const MESA_OWNER_ROLES = ['productive_leader', 'module_leader', 'system_leader', 'lider_supremo'];
-  const isMesaOwner = (u) => MESA_OWNER_ROLES.includes(u.role);
+  // Roles múltiples: un usuario con rol adicional (p.ej. distributor con rol
+  // extra productive_leader) también cuenta como dueño de mesa.
+  const isMesaOwner = (u) => (u.roles || [u.role]).some((r) => MESA_OWNER_ROLES.includes(r));
   const MESA_OWNER_ROLE_TAG = { module_leader: 'Líder Módulo', system_leader: 'Líder Sistema', lider_supremo: 'Líder Supremo' };
   function mesaOwnerLabel(p) {
-    const tag = MESA_OWNER_ROLE_TAG[p.role];
+    // Si el rol principal no trae tag (p.ej. distributor), pero tiene un rol
+    // adicional de líder, se usa ese para no dejar el selector sin contexto.
+    const tagRole = MESA_OWNER_ROLE_TAG[p.role] ? p.role : (p.roles || []).find((r) => MESA_OWNER_ROLE_TAG[r]);
+    const tag = MESA_OWNER_ROLE_TAG[tagRole];
     const modTag = p.module_number ? ' · M' + p.module_number : '';
     return tag ? `${p.full_name} — ${tag}${modTag}` : `${p.full_name}${modTag}`;
   }
@@ -1728,6 +1733,21 @@
       `<option value="${p.id}" ${p.id === u.productive_leader_id ? 'selected' : ''}>${mesaOwnerLabel(p)}</option>`
     ).join('');
 
+    // Roles múltiples: lider_supremo puede agregar/quitar cualquier rol
+    // adicional; system_leader solo los que puede asignar como principal
+    // (module_leader/productive_leader/distributor) — misma matriz que el
+    // cambio de rol. El rol principal actual nunca aparece aquí como "extra".
+    const EXTRA_ROLE_OPTS = me.role === 'lider_supremo'
+      ? ROLES_FOR_EDIT
+      : ['module_leader', 'productive_leader', 'distributor'];
+    const originalExtraRoles = (u.roles || []).filter((r) => r !== u.role);
+    const extraRolesHtml = EXTRA_ROLE_OPTS.filter((r) => r !== u.role).map((r) => `
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ivory-soft);text-transform:none;letter-spacing:normal;margin:4px 0;">
+        <input type="checkbox" class="eu-extra-role-cb" value="${r}" ${originalExtraRoles.includes(r) ? 'checked' : ''} style="width:auto;margin:0;" />
+        ${ROLE_LABEL[r]}
+      </label>
+    `).join('');
+
     openModal(`Editar usuario — ${u.full_name}`, `
       <div class="field"><label>Nombre completo</label><input type="text" id="eu-name" value="${(u.full_name || '').replace(/"/g, '&quot;')}" /></div>
       <div class="field"><label>Correo</label><input type="email" id="eu-email" value="${u.email || ''}" /></div>
@@ -1737,6 +1757,11 @@
       <div class="field"><label>Módulo</label><select id="eu-module"><option value="">(ninguno)</option>${modOpts}</select></div>
       <div class="field"><label>Líder Productivo (mesa)</label><select id="eu-pl"><option value="">(ninguno)</option>${plOpts}</select></div>
       ${u.pending_productive_leader_name ? `<div class="hint hint--positive" style="margin: -8px 0 14px;">⌛ El usuario escribió a mano: <strong>${u.pending_productive_leader_name}</strong> — todavía no está registrado. Asignalo arriba cuando lo esté; se limpia solo.</div>` : ''}
+      <div class="field" id="eu-extra-roles-wrap">
+        <label>Roles adicionales (además del principal)</label>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;">${extraRolesHtml}</div>
+        <p class="hint" style="margin-top:6px;">Mantiene los permisos del rol principal, pero además aparece en listas y selectores de estos roles (p.ej. como líder productivo de su mesa). Si agregas Líder de Módulo o Líder Productivo y el usuario no tiene módulo, se usa el que esté seleccionado arriba en "Módulo".</p>
+      </div>
       <p class="hint" style="margin: 0 0 14px;">Cambios manuales — usa con cuidado. Mover entre sistemas/módulos rompe relaciones con su downline.</p>
       <button class="primary" id="eu-save">Guardar cambios</button>
     `);
@@ -1766,6 +1791,24 @@
         if (touched.module) body.module_id = parseInt($('eu-module').value, 10) || null;
         if (touched.pl)     body.productive_leader_id = parseInt($('eu-pl').value, 10) || null;
         await api(`/api/users/${u.id}`, { method: 'PATCH', body: JSON.stringify(body) });
+
+        // Roles adicionales: se sincronizan DESPUÉS del PATCH principal, para
+        // que si se acaba de asignar un módulo en este mismo guardado ya esté
+        // disponible al agregar un rol module_leader/productive_leader nuevo.
+        const checkedRoles = $$('.eu-extra-role-cb', document)
+          .filter((cb) => cb.checked).map((cb) => cb.value).filter((r) => r !== body.role);
+        const toAdd = checkedRoles.filter((r) => !originalExtraRoles.includes(r));
+        const toRemove = originalExtraRoles.filter((r) => !checkedRoles.includes(r) && r !== body.role);
+        for (const r of toAdd) {
+          const payload = { role: r };
+          const modVal = parseInt($('eu-module').value, 10);
+          if ((r === 'module_leader' || r === 'productive_leader') && modVal) payload.module_id = modVal;
+          await api(`/api/users/${u.id}/roles`, { method: 'POST', body: JSON.stringify(payload) });
+        }
+        for (const r of toRemove) {
+          await api(`/api/users/${u.id}/roles/${encodeURIComponent(r)}`, { method: 'DELETE' });
+        }
+
         closeModal(); loadUsers();
       } catch (e) { alert(e.message); }
     });
@@ -1786,6 +1829,15 @@
     productive_leader: 'Líder Productivo',
     distributor: 'Profesional',
   };
+  // Roles múltiples: badges pequeños junto al rol principal para los roles
+  // adicionales que un usuario tenga asignados (p.ej. "+ Líder Productivo").
+  function extraRoleBadges(u) {
+    const extra = (u.roles || []).filter((r) => r !== u.role);
+    if (!extra.length) return '';
+    return extra.map((r) =>
+      `<span class="tag" style="margin-left:4px;background:rgba(70,176,168,0.14);color:var(--teal-400);border-color:rgba(70,176,168,0.3);" title="Rol adicional">+ ${ROLE_LABEL[r] || r}</span>`
+    ).join('');
+  }
   function canEditRoleOf(target) {
     if (!me || target.id === me.id) return false;
     if (me.role === 'lider_supremo') return true;
@@ -1938,7 +1990,7 @@
           <td><strong>${u.full_name}</strong>${u.email ? `<div class="muted" style="font-size:12px;">${u.email}</div>` : ''}</td>
           <td>${canEditRoleOf(u)
             ? `<span class="tag gold role-edit" data-id="${u.id}" data-role="${u.role}" data-module-id="${u.module_id || ''}" data-system-id="${u.system_id || ''}" data-name="${u.full_name.replace(/"/g, '&quot;')}" title="Click para cambiar el rol" style="cursor:pointer;">${u.role_label} ▾</span>`
-            : `<span class="tag gold">${u.role_label}</span>`}</td>
+            : `<span class="tag gold">${u.role_label}</span>`}${extraRoleBadges(u)}</td>
           <td>${u.bhip_rank ? `<span class="tag" style="background:rgba(46,139,139,0.18);color:var(--teal-400);border-color:rgba(70,176,168,0.3);">${u.bhip_rank}</span>` : '—'}</td>
           <td>${u.module_number ? `M${u.module_number}` : '—'}</td>
           <td>${u.productive_leader_name

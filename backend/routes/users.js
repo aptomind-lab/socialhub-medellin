@@ -5,13 +5,26 @@ const { customAlphabet } = require('nanoid');
 const db = require('../db');
 const { requireAuth, requireRole, scopeUsersClause } = require('../middleware/auth');
 const { refreshUserBlock, refreshAllUserBlocks } = require('../utils/blocking');
-const { ROLE_LABELS } = require('../utils/stages');
+const { ROLE_LABELS, ROLES } = require('../utils/stages');
 const { BHIP_RANKS, isValidRank } = require('../utils/bhip');
 const { generateInitialPassword } = require('../utils/password');
 const { sendWelcomeEmail, sendAdminResetEmail } = require('../utils/email');
 
 const router = express.Router();
 const generateCode = customAlphabet('ABCDEFGHJKMNPQRSTUVWXYZ23456789', 6);
+
+// Roles múltiples: cláusula "tiene este rol, ya sea principal o adicional" —
+// usada en listados/selectores para que alguien con rol secundario aparezca
+// igual que si ese fuera su rol principal (sin tocar permisos, que siguen
+// saliendo únicamente de u.role — el más alto).
+function hasRoleSql(alias) {
+  return `(${alias}.role = ? OR ${alias}.id IN (SELECT user_id FROM user_roles WHERE role = ?))`;
+}
+
+function syncPrimaryRole(userId, role, actorId) {
+  db.prepare(`INSERT OR IGNORE INTO user_roles (user_id, role, created_by) VALUES (?, ?, ?)`)
+    .run(userId, role, actorId || null);
+}
 
 // Lista usuarios visibles según jerarquía. Filtros: role, module_id, productive_leader_id, status
 router.get('/', requireAuth, (req, res) => {
@@ -24,7 +37,8 @@ router.get('/', requireAuth, (req, res) => {
       s.nombre AS system_name,
       pl.full_name AS productive_leader_name,
       (SELECT MAX(created_at) FROM daily_activity dm WHERE dm.user_id = u.id) AS last_message_at,
-      (SELECT COUNT(*) FROM guests g WHERE g.distributor_id = u.id) AS total_guests
+      (SELECT COUNT(*) FROM guests g WHERE g.distributor_id = u.id) AS total_guests,
+      (SELECT GROUP_CONCAT(role) FROM user_roles ur WHERE ur.user_id = u.id) AS roles_concat
     FROM users u
     LEFT JOIN modules m ON m.id = u.module_id
     LEFT JOIN systems s ON s.id = u.system_id
@@ -32,7 +46,9 @@ router.get('/', requireAuth, (req, res) => {
     WHERE 1=1 ${scope.sql}
   `;
   const params = [...scope.params];
-  if (role) { sql += ' AND u.role = ?'; params.push(role); }
+  // Rol secundario incluido: un usuario con ese rol adicional aparece igual
+  // que uno con ese rol como principal (roles múltiples).
+  if (role) { sql += ` AND ${hasRoleSql('u')}`; params.push(role, role); }
   if (module_id) { sql += ' AND u.module_id = ?'; params.push(module_id); }
   if (productive_leader_id) { sql += ' AND u.productive_leader_id = ?'; params.push(productive_leader_id); }
   if (status === 'blocked') sql += ' AND u.blocked = 1';
@@ -64,7 +80,10 @@ router.get('/module-gate/leaders', requireAuth, (req, res) => {
     return res.status(403).json({ error: 'Módulo fuera de tu sistema' });
   }
   const leaders = db.prepare(`
-    SELECT id, full_name FROM users WHERE role = 'productive_leader' AND module_id = ? ORDER BY full_name
+    SELECT id, full_name FROM users
+    WHERE (role = 'productive_leader' OR id IN (SELECT user_id FROM user_roles WHERE role = 'productive_leader'))
+      AND module_id = ?
+    ORDER BY full_name
   `).all(moduleId);
   res.json({ productive_leaders: leaders });
 });
@@ -93,7 +112,9 @@ router.post('/module-gate/complete', requireAuth, (req, res) => {
   let pendingName = null;
   if (productive_leader_id) {
     const pl = db.prepare(`
-      SELECT id FROM users WHERE id = ? AND role = 'productive_leader' AND module_id = ?
+      SELECT id FROM users
+      WHERE id = ? AND module_id = ?
+        AND (role = 'productive_leader' OR id IN (SELECT user_id FROM user_roles WHERE role = 'productive_leader'))
     `).get(parseInt(productive_leader_id, 10), modId);
     if (!pl) return res.status(400).json({ error: 'Líder productivo inválido para ese módulo' });
     finalPlId = pl.id;
@@ -220,6 +241,7 @@ router.post('/', requireAuth, async (req, res) => {
     if (String(err).includes('UNIQUE')) return res.status(409).json({ error: 'Conflicto de unicidad' });
     console.error(err); return res.status(500).json({ error: 'Error al crear usuario' });
   }
+  syncPrimaryRole(newId, role, req.user.id);
 
   // Link de auto-login de un solo uso (24h) — el usuario entra directo desde
   // el correo, sin escribir código+contraseña. Se genera ANTES del envío:
@@ -265,7 +287,8 @@ router.get('/:id', requireAuth, (req, res) => {
   const u = db.prepare(`
     SELECT u.*, m.number AS module_number, m.name AS module_name,
       s.nombre AS system_name,
-      pl.full_name AS productive_leader_name
+      pl.full_name AS productive_leader_name,
+      (SELECT GROUP_CONCAT(role) FROM user_roles ur WHERE ur.user_id = u.id) AS roles_concat
     FROM users u
     LEFT JOIN modules m ON m.id = u.module_id
     LEFT JOIN systems s ON s.id = u.system_id
@@ -348,7 +371,83 @@ router.patch('/:id', requireAuth, (req, res) => {
   if (!fields.length) return res.status(400).json({ error: 'Sin campos' });
   values.push(req.params.id);
   db.prepare(`UPDATE users SET ${fields.join(', ')} WHERE id = ?`).run(...values);
-  res.json({ user: decorate(db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id)) });
+  // El rol principal siempre queda reflejado también en user_roles (roles
+  // múltiples) — no reemplaza ni borra los roles adicionales que ya tenía.
+  if (role !== undefined) syncPrimaryRole(req.params.id, role, req.user.id);
+  res.json({ user: decorate(db.prepare(`
+    SELECT u.*, (SELECT GROUP_CONCAT(role) FROM user_roles ur WHERE ur.user_id = u.id) AS roles_concat
+    FROM users u WHERE u.id = ?
+  `).get(req.params.id)) });
+});
+
+// ─── Roles adicionales (roles múltiples simultáneos) ───
+// Gestión: lider_supremo (cualquier rol) y system_leader (solo dentro de su
+// propio sistema, y solo roles module_leader/productive_leader/distributor —
+// misma matriz que el cambio de rol principal). El rol principal (users.role)
+// nunca se toca desde aquí; solo se agregan/quitan roles ADICIONALES.
+const SL_ASSIGNABLE_ROLES = ['module_leader', 'productive_leader', 'distributor'];
+
+function canManageRolesOf(actor, target) {
+  if (actor.role === 'lider_supremo') return true;
+  if (actor.role === 'system_leader') return target.system_id === actor.system_id;
+  return false;
+}
+
+router.post('/:id/roles', requireAuth, (req, res) => {
+  const target = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+  if (!target) return res.status(404).json({ error: 'Usuario no encontrado' });
+  if (!canManageRolesOf(req.user, target)) return res.status(403).json({ error: 'No tienes acceso a este usuario' });
+
+  const { role, module_id } = req.body || {};
+  if (!ROLES.includes(role)) return res.status(400).json({ error: 'Rol inválido' });
+  if (req.user.role === 'system_leader' && !SL_ASSIGNABLE_ROLES.includes(role)) {
+    return res.status(403).json({ error: 'No puedes asignar este rol' });
+  }
+  if (role === target.role) {
+    return res.status(400).json({ error: 'Ese ya es su rol principal' });
+  }
+
+  // module_leader / productive_leader necesitan un módulo de referencia. Si el
+  // usuario ya tiene uno asignado, se respeta (no se pisa); si no, se exige
+  // module_id en el body para asignárselo junto con el rol.
+  if (['module_leader', 'productive_leader'].includes(role) && !target.module_id) {
+    const modId = parseInt(module_id, 10);
+    if (!modId) return res.status(400).json({ error: 'Este rol adicional requiere un módulo' });
+    const mod = db.prepare('SELECT id, system_id FROM modules WHERE id = ?').get(modId);
+    if (!mod || mod.system_id !== target.system_id) {
+      return res.status(400).json({ error: 'Módulo inválido para el sistema de este usuario' });
+    }
+    db.prepare('UPDATE users SET module_id = ? WHERE id = ?').run(modId, target.id);
+  }
+
+  db.prepare(`INSERT OR IGNORE INTO user_roles (user_id, role, created_by) VALUES (?, ?, ?)`)
+    .run(target.id, role, req.user.id);
+
+  res.json({ user: decorate(db.prepare(`
+    SELECT u.*, (SELECT GROUP_CONCAT(role) FROM user_roles ur WHERE ur.user_id = u.id) AS roles_concat
+    FROM users u WHERE u.id = ?
+  `).get(target.id)) });
+});
+
+router.delete('/:id/roles/:role', requireAuth, (req, res) => {
+  const target = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+  if (!target) return res.status(404).json({ error: 'Usuario no encontrado' });
+  if (!canManageRolesOf(req.user, target)) return res.status(403).json({ error: 'No tienes acceso a este usuario' });
+
+  const { role } = req.params;
+  if (role === target.role) {
+    return res.status(400).json({ error: 'No puedes quitar el rol principal — cámbialo primero' });
+  }
+  if (req.user.role === 'system_leader' && !SL_ASSIGNABLE_ROLES.includes(role)) {
+    return res.status(403).json({ error: 'No puedes quitar este rol' });
+  }
+
+  db.prepare('DELETE FROM user_roles WHERE user_id = ? AND role = ?').run(target.id, role);
+
+  res.json({ user: decorate(db.prepare(`
+    SELECT u.*, (SELECT GROUP_CONCAT(role) FROM user_roles ur WHERE ur.user_id = u.id) AS roles_concat
+    FROM users u WHERE u.id = ?
+  `).get(target.id)) });
 });
 
 // Toggle de desactivación temporal: el usuario puede seguir entrando al
@@ -449,6 +548,8 @@ function canActOn(actor, target) {
 
 function decorate(u) {
   if (!u) return null;
+  const roles = u.roles_concat ? u.roles_concat.split(',') : [u.role];
+  if (!roles.includes(u.role)) roles.push(u.role); // el principal siempre presente
   return {
     id: u.id,
     full_name: u.full_name,
@@ -457,6 +558,8 @@ function decorate(u) {
     distributor_code: u.distributor_code,
     role: u.role,
     role_label: ROLE_LABELS[u.role],
+    roles,
+    roles_labels: roles.map((r) => ROLE_LABELS[r] || r),
     bhip_rank: u.bhip_rank,
     system_id: u.system_id,
     system_name: u.system_name,

@@ -171,11 +171,14 @@ router.get('/role-breakdown', requireAuth, (req, res) => {
   if (role === 'module_leader') {
     const pls = db.prepare(`
       SELECT id, full_name, distributor_code FROM users
-      WHERE role='productive_leader' AND module_id=? AND active=1
+      WHERE (role='productive_leader' OR id IN (SELECT user_id FROM user_roles WHERE role='productive_leader'))
+        AND module_id=? AND active=1 AND id != ?
       ORDER BY full_name
-    `).all(req.user.module_id);
+    `).all(req.user.module_id, req.user.id);
     // El lider_modulo también tiene su propia mesa personal — aparece en la
     // lista junto a los PLs de su módulo (sus invitados directos + su equipo).
+    // (excluido arriba con id != ? para no duplicarlo si además tiene rol
+    // adicional productive_leader — se agrega una sola vez abajo)
     pls.push({ id: req.user.id, full_name: `${req.user.full_name} (tú)`, distributor_code: req.user.distributor_code });
     const rows = pls.map((p) => {
       // Métricas del PL (sí mismo) + su mesa
